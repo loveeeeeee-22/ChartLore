@@ -12,10 +12,12 @@ function toInputDate(dateString: string) {
   return new Date(dateString).toISOString().slice(0, 16);
 }
 
-export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
+function TradeFormBody({ initialTrade }: { initialTrade?: Trade }) {
   const router = useRouter();
   const store = useTradeStore();
   const [newTagLabel, setNewTagLabel] = useState("");
+  const [newReviewNote, setNewReviewNote] = useState("");
+  const [notePending, setNotePending] = useState(false);
   const [pending, setPending] = useState(false);
   const [draft, setDraft] = useState<TradeDraft>({
     id: initialTrade?.id,
@@ -36,6 +38,9 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
     conviction: initialTrade?.conviction ?? 3,
     tags: initialTrade?.tags ?? [],
   });
+  const tradeNotes = store.notes
+    .filter((note) => note.tradeId === draft.id)
+    .sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime());
   const resolvedAccountId = draft.accountId || store.accounts[0]?.id || "";
   const resolvedStrategyId = draft.strategyId || store.strategies[0]?.id || "";
 
@@ -103,6 +108,20 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
       setDraft((current) => ({ ...current, tags: [...current.tags, createdTag.id] }));
     }
     setNewTagLabel("");
+  };
+
+  const handleAddReviewNote = async () => {
+    if (!draft.id || !newReviewNote.trim()) {
+      return;
+    }
+
+    setNotePending(true);
+    const created = await store.addTradeNote(draft.id, newReviewNote);
+    setNotePending(false);
+
+    if (created) {
+      setNewReviewNote("");
+    }
   };
 
   return (
@@ -273,6 +292,41 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
             </div>
           </Card>
 
+          {draft.id ? (
+            <Card>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-muted">Trade Review Notes</p>
+              <div className="mt-4 space-y-3">
+                <TextArea
+                  rows={4}
+                  placeholder="Add post-trade review notes, lessons, execution observations, or follow-ups."
+                  value={newReviewNote}
+                  onChange={(event) => setNewReviewNote(event.target.value)}
+                />
+                <div className="flex justify-end">
+                  <Button type="button" onClick={handleAddReviewNote} disabled={notePending}>
+                    {notePending ? "Saving Note..." : "Add Note"}
+                  </Button>
+                </div>
+                <div className="space-y-3">
+                  {tradeNotes.length > 0 ? (
+                    tradeNotes.map((note) => (
+                      <div key={note.id} className="rounded-[20px] border border-border bg-card-soft p-4">
+                        <p className="text-sm leading-7 text-foreground">{note.content}</p>
+                        <p className="mt-2 text-xs text-muted">
+                          {new Date(note.createdAt).toLocaleString()}
+                        </p>
+                      </div>
+                    ))
+                  ) : (
+                    <p className="text-sm text-muted">
+                      No review notes yet. Add one after the trade is over to capture context and lessons.
+                    </p>
+                  )}
+                </div>
+              </div>
+            </Card>
+          ) : null}
+
           <div className="flex justify-end gap-3">
             <Button type="button" variant="secondary" onClick={() => router.back()}>
               Cancel
@@ -285,4 +339,26 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
       </div>
     </form>
   );
+}
+
+export function TradeForm({
+  initialTrade,
+  tradeId,
+}: {
+  initialTrade?: Trade;
+  tradeId?: string;
+}) {
+  const store = useTradeStore();
+  const liveTrade = store.getTradeById(tradeId ?? initialTrade?.id ?? "");
+  const fallbackTrade = tradeId ? undefined : initialTrade;
+  const sourceTrade = liveTrade ?? fallbackTrade;
+  if (tradeId && !sourceTrade) {
+    return (
+      <Card>
+        <p className="text-sm text-muted">Loading trade review...</p>
+      </Card>
+    );
+  }
+
+  return <TradeFormBody key={sourceTrade?.id ?? "new-trade"} initialTrade={sourceTrade} />;
 }

@@ -1,7 +1,5 @@
-import { notFound } from "next/navigation";
 import { PageHeader } from "@/components/common/page-header";
 import { TradeForm } from "@/components/trades/trade-form";
-import { trades } from "@/lib/mock-data";
 
 export default async function TradeDetailPage({
   params,
@@ -9,20 +7,15 @@ export default async function TradeDetailPage({
   params: Promise<{ tradeId: string }>;
 }) {
   const { tradeId } = await params;
-  const trade = trades.find((item) => item.id === tradeId);
-
-  if (!trade) {
-    notFound();
-  }
 
   return (
     <div className="space-y-6">
       <PageHeader
         eyebrow="Trades"
-        title={`Edit ${trade.symbol}`}
-        description="Use the same journaling form to refine fills, thesis notes, and risk parameters after the session."
+        title="Review and complete this trade"
+        description="Finish the journal entry after the session by assigning account context, tags, notes, and any missing execution details."
       />
-      <TradeForm initialTrade={trade} />
+      <TradeForm tradeId={tradeId} />
     </div>
   );
 }

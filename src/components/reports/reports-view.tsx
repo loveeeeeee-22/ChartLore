@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { Download } from "lucide-react";
 import { Badge, Button, Card } from "@/components/common/primitives";
 import { FilterBar, useFilters } from "@/components/common/filter-bar";
@@ -66,6 +67,7 @@ export function ReportsView() {
                 <th className="px-5 py-4">Exit</th>
                 <th className="px-5 py-4">R</th>
                 <th className="px-5 py-4 text-right">P&L</th>
+                <th className="px-5 py-4 text-right">Review</th>
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-sm">
@@ -88,6 +90,14 @@ export function ReportsView() {
                     }`}
                   >
                     {formatCurrency(trade.pnl)}
+                  </td>
+                  <td className="px-5 py-4 text-right">
+                    <Link
+                      href={`/trades/${trade.id}`}
+                      className="text-sm font-semibold text-accent transition hover:text-accent-strong"
+                    >
+                      Review
+                    </Link>
                   </td>
                 </tr>
               ))}

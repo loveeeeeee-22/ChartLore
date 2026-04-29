@@ -22,6 +22,7 @@ type BrokerDraft = {
   apiKey: string;
   apiSecret: string;
   accountId: string;
+  importStrategyId: string;
   csvFile: File | null;
 };
 
@@ -127,6 +128,7 @@ export function SettingsView() {
     apiKey: "",
     apiSecret: "",
     accountId: "",
+    importStrategyId: "",
     csvFile: null,
   });
   const [newAccount, setNewAccount] = useState<AccountDraft>({
@@ -179,9 +181,12 @@ export function SettingsView() {
     });
   };
 
+  const resolvedImportAccountId = brokerDraft.accountId || accounts[0]?.id || "";
+  const resolvedImportStrategyId = brokerDraft.importStrategyId || strategies[0]?.id || "";
+
   const importCsvTrades = async (file: File) => {
-    if (!accounts[0]?.id || !strategies[0]?.id) {
-      throw new Error("Create at least one ChartLore account before importing CSV trades.");
+    if (!resolvedImportAccountId || !resolvedImportStrategyId) {
+      throw new Error("Choose an account and create at least one strategy before importing CSV trades.");
     }
 
     const text = await file.text();
@@ -237,8 +242,8 @@ export function SettingsView() {
       const closedAt = toIsoDate(cells[closeTimeIndex] ?? "");
 
       await saveTrade({
-        accountId: accounts[0].id,
-        strategyId: strategies[0].id,
+        accountId: resolvedImportAccountId,
+        strategyId: resolvedImportStrategyId,
         symbol,
         market: symbol,
         side,
@@ -261,8 +266,8 @@ export function SettingsView() {
   };
 
   const importMt5Trades = async (parsedTrades: ParsedTrade[]) => {
-    if (!accounts[0]?.id || !strategies[0]?.id) {
-      throw new Error("Create at least one ChartLore account before importing MT5 trades.");
+    if (!resolvedImportAccountId || !resolvedImportStrategyId) {
+      throw new Error("Choose an account and create at least one strategy before importing MT5 trades.");
     }
 
     if (!parsedTrades.length) {
@@ -273,8 +278,8 @@ export function SettingsView() {
 
     for (const trade of parsedTrades) {
       await saveTrade({
-        accountId: accounts[0].id,
-        strategyId: strategies[0].id,
+        accountId: resolvedImportAccountId,
+        strategyId: resolvedImportStrategyId,
         symbol: trade.symbol,
         market: deriveMarket(trade.symbol),
         side: trade.side,
@@ -358,6 +363,7 @@ export function SettingsView() {
           apiKey: "",
           apiSecret: "",
           accountId: "",
+          importStrategyId: "",
           csvFile: null,
         });
         setParsedMt5Trades([]);
@@ -396,6 +402,7 @@ export function SettingsView() {
         apiKey: "",
         apiSecret: "",
         accountId: "",
+        importStrategyId: "",
         csvFile: null,
       });
       setParsedMt5Trades([]);
@@ -553,6 +560,47 @@ export function SettingsView() {
                 {mt5Preview ? (
                   <p className="text-sm text-success">{mt5Preview}</p>
                 ) : null}
+                <div className="mt-4 grid gap-4 md:grid-cols-2">
+                  <div className="space-y-2">
+                    <FieldLabel>Import Into Account</FieldLabel>
+                    <Select
+                      value={resolvedImportAccountId}
+                      onChange={(event) =>
+                        setBrokerDraft((current) => ({ ...current, accountId: event.target.value }))
+                      }
+                    >
+                      <option value="" disabled>
+                        Select account
+                      </option>
+                      {accounts.map((account) => (
+                        <option key={account.id} value={account.id}>
+                          {account.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                  <div className="space-y-2">
+                    <FieldLabel>Assign Strategy</FieldLabel>
+                    <Select
+                      value={resolvedImportStrategyId}
+                      onChange={(event) =>
+                        setBrokerDraft((current) => ({
+                          ...current,
+                          importStrategyId: event.target.value,
+                        }))
+                      }
+                    >
+                      <option value="" disabled>
+                        Select strategy
+                      </option>
+                      {strategies.map((strategy) => (
+                        <option key={strategy.id} value={strategy.id}>
+                          {strategy.name}
+                        </option>
+                      ))}
+                    </Select>
+                  </div>
+                </div>
               </div>
             ) : null}
           </div>

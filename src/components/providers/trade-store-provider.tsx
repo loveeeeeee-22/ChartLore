@@ -71,6 +71,7 @@ interface TradeStoreValue {
   trades: Trade[];
   saveTrade: (draft: TradeDraft) => Promise<string>;
   getTradeById: (id: string) => Trade | undefined;
+  addTradeNote: (tradeId: string, content: string) => Promise<TradeNote | undefined>;
   updateProfile: (nextProfile: Profile) => Promise<void>;
   addTag: (label: string) => Promise<TradeTag | undefined>;
   addAccount: (draft: AccountDraft) => Promise<Account | undefined>;
@@ -660,6 +661,42 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
       },
       getTradeById(id) {
         return trades.find((trade) => trade.id === id);
+      },
+      async addTradeNote(tradeId, content) {
+        const cleanContent = content.trim();
+        if (!cleanContent) {
+          return undefined;
+        }
+
+        if (!isSupabaseMode || !supabase || !session) {
+          const nextNote: TradeNote = {
+            id: `note-${Date.now()}`,
+            tradeId,
+            content: cleanContent,
+            createdAt: new Date().toISOString(),
+          };
+          setNotes((current) => [nextNote, ...current]);
+          return nextNote;
+        }
+
+        const result = await supabase
+          .from("trade_notes")
+          .insert({
+            user_id: session.id,
+            trade_id: tradeId,
+            content: cleanContent,
+          })
+          .select("*")
+          .single<TradeNoteRow>();
+
+        if (result.error || !result.data) {
+          console.error("Failed to create trade note", result.error);
+          return undefined;
+        }
+
+        const nextNote = noteFromRow(result.data as TradeNoteRow);
+        setNotes((current) => [nextNote, ...current]);
+        return nextNote;
       },
       async updateProfile(nextProfile) {
         setProfile(nextProfile);
