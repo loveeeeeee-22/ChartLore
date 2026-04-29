@@ -343,6 +343,28 @@ export function SettingsView() {
         throw new Error("Choose an MT5 HTML or CSV file before connecting.");
       }
 
+      if (brokerDraft.broker === "csv" && brokerDraft.csvFile) {
+        const lowerName = brokerDraft.csvFile.name.toLowerCase();
+        const imported =
+          lowerName.endsWith(".html") || lowerName.endsWith(".htm")
+            ? await importMt5Trades(parsedMt5Trades)
+            : await importCsvTrades(brokerDraft.csvFile);
+
+        setBrokerNotice(`${imported} trades imported successfully`);
+        setShowBrokerPanel(false);
+        setBrokerDraft({
+          broker: "alpaca",
+          label: "",
+          apiKey: "",
+          apiSecret: "",
+          accountId: "",
+          csvFile: null,
+        });
+        setParsedMt5Trades([]);
+        setMt5Preview("");
+        return;
+      }
+
       if (brokerDraft.broker === "alpaca" && (!brokerDraft.apiKey.trim() || !brokerDraft.apiSecret.trim())) {
         throw new Error("Alpaca requires both API Key and API Secret.");
       }
@@ -365,17 +387,7 @@ export function SettingsView() {
         throw new Error("Unable to create broker connection.");
       }
 
-      if (brokerDraft.broker === "csv" && brokerDraft.csvFile) {
-        const lowerName = brokerDraft.csvFile.name.toLowerCase();
-        const imported =
-          lowerName.endsWith(".html") || lowerName.endsWith(".htm")
-            ? await importMt5Trades(parsedMt5Trades)
-            : await importCsvTrades(brokerDraft.csvFile);
-
-        setBrokerNotice(`${imported} trades imported successfully`);
-      } else {
-        setBrokerNotice(`${label} connected successfully.`);
-      }
+      setBrokerNotice(`${label} connected successfully.`);
 
       setShowBrokerPanel(false);
       setBrokerDraft({
