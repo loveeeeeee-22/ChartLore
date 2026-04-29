@@ -13,10 +13,10 @@ function SignInScreen() {
   const verified = searchParams.get("verified") === "1";
   const initialMode = searchParams.get("mode") === "sign-up" ? "sign-up" : "sign-in";
   const [mode, setMode] = useState<"sign-in" | "sign-up">(initialMode);
-  const [fullName, setFullName] = useState("Alex Rivera");
-  const [email, setEmail] = useState("alex@chartlore.app");
-  const [password, setPassword] = useState("demo-password");
-  const [confirmPassword, setConfirmPassword] = useState("demo-password");
+  const [fullName, setFullName] = useState("");
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(
     verified ? "Email verified. Redirecting you into your fresh dashboard..." : "",

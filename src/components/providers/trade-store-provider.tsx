@@ -341,19 +341,49 @@ function toTradeInsert(userId: string, draft: TradeDraft) {
 
 export function TradeStoreProvider({ children }: { children: ReactNode }) {
   const { session } = useAuth();
-  const [profile, setProfile] = useState<Profile>(() => getStoredItem(STORAGE_KEYS.profile, seedProfile));
-  const [accounts, setAccounts] = useState<Account[]>(() =>
-    getStoredItem(STORAGE_KEYS.accounts, seedAccounts),
+  const hasSupa = Boolean(getSupabaseBrowserClient());
+  const [profile, setProfile] = useState<Profile | null>(() =>
+    hasSupa ? null : getStoredItem(STORAGE_KEYS.profile, seedProfile),
   );
-  const [strategies, setStrategies] = useState<Strategy[]>(seedStrategies);
-  const [tags, setTags] = useState<TradeTag[]>(() => getStoredItem(STORAGE_KEYS.tags, seedTags));
-  const [notes, setNotes] = useState<TradeNote[]>(seedTradeNotes);
-  const [executions, setExecutions] = useState<TradeExecution[]>(seedTradeExecutions);
-  const [dailySnapshots, setDailySnapshots] = useState<DailySnapshot[]>(seedDailySnapshots);
-  const [trades, setTrades] = useState<Trade[]>(() => getStoredItem(STORAGE_KEYS.trades, seedTrades));
+  const [accounts, setAccounts] = useState<Account[]>(() =>
+    hasSupa ? [] : getStoredItem(STORAGE_KEYS.accounts, seedAccounts),
+  );
+  const [strategies, setStrategies] = useState<Strategy[]>(() => (hasSupa ? [] : seedStrategies));
+  const [tags, setTags] = useState<TradeTag[]>(() =>
+    hasSupa ? [] : getStoredItem(STORAGE_KEYS.tags, seedTags),
+  );
+  const [notes, setNotes] = useState<TradeNote[]>(() => (hasSupa ? [] : seedTradeNotes));
+  const [executions, setExecutions] = useState<TradeExecution[]>(() =>
+    hasSupa ? [] : seedTradeExecutions,
+  );
+  const [dailySnapshots, setDailySnapshots] = useState<DailySnapshot[]>(() =>
+    hasSupa ? [] : seedDailySnapshots,
+  );
+  const [trades, setTrades] = useState<Trade[]>(() =>
+    hasSupa ? [] : getStoredItem(STORAGE_KEYS.trades, seedTrades),
+  );
 
   const supabase = getSupabaseBrowserClient();
   const isSupabaseMode = Boolean(supabase && session && session.id !== "demo-user");
+  const safeProfile = useMemo(
+    () =>
+      profile ??
+      (session
+        ? {
+            id: session.id,
+            email: session.email,
+            fullName: session.fullName || "ChartLore Trader",
+            initials: buildInitials(session.fullName || "ChartLore Trader"),
+            tier: "pro" as const,
+            focus: "",
+            country: "",
+            phone: "",
+            city: "",
+            timezone: "UTC",
+          }
+        : seedProfile),
+    [profile, session],
+  );
 
   useEffect(() => {
     if (!isSupabaseMode) {
@@ -505,7 +535,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<TradeStoreValue>(
     () => ({
-      profile,
+      profile: safeProfile,
       accounts,
       strategies,
       tags,
@@ -516,7 +546,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
       async saveTrade(draft) {
         const nextTrade: Trade = {
           id: draft.id ?? `trade-${Date.now()}`,
-          userId: profile.id,
+          userId: safeProfile.id,
           accountId: draft.accountId,
           strategyId: draft.strategyId,
           symbol: draft.symbol,
@@ -652,7 +682,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
         if (!isSupabaseMode || !supabase || !session) {
           const nextAccount: Account = {
             id: `acct-${Date.now()}`,
-            userId: profile.id,
+            userId: safeProfile.id,
             name: draft.name,
             broker: draft.broker,
             balance: draft.balance,
@@ -778,7 +808,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
         );
       },
     }),
-    [accounts, dailySnapshots, executions, isSupabaseMode, notes, profile, session, strategies, supabase, tags, trades],
+    [accounts, dailySnapshots, executions, isSupabaseMode, notes, safeProfile, session, strategies, supabase, tags, trades],
   );
 
   return <TradeStoreContext.Provider value={value}>{children}</TradeStoreContext.Provider>;
