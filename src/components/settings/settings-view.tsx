@@ -1,14 +1,109 @@
 "use client";
 
 import { useState } from "react";
-import { Link2, PlusCircle, Trash2 } from "lucide-react";
-import { Badge, Button, Card, FieldLabel, Select, TextInput, TextArea } from "@/components/common/primitives";
+import { Link2, PlusCircle, RefreshCw, Trash2, Upload } from "lucide-react";
+import {
+  Badge,
+  Button,
+  Card,
+  FieldLabel,
+  Select,
+  TextInput,
+  TextArea,
+} from "@/components/common/primitives";
 import { PageHeader } from "@/components/common/page-header";
 import { type AccountDraft, useTradeStore } from "@/components/providers/trade-store-provider";
+import type { BrokerConnection } from "@/lib/types";
+
+type BrokerDraft = {
+  broker: BrokerConnection["broker"];
+  label: string;
+  apiKey: string;
+  apiSecret: string;
+  accountId: string;
+  csvFile: File | null;
+};
+
+function splitCsvLine(line: string) {
+  const cells: string[] = [];
+  let current = "";
+  let inQuotes = false;
+
+  for (let index = 0; index < line.length; index += 1) {
+    const char = line[index];
+
+    if (char === '"') {
+      if (inQuotes && line[index + 1] === '"') {
+        current += '"';
+        index += 1;
+      } else {
+        inQuotes = !inQuotes;
+      }
+      continue;
+    }
+
+    if (char === "," && !inQuotes) {
+      cells.push(current.trim());
+      current = "";
+      continue;
+    }
+
+    current += char;
+  }
+
+  cells.push(current.trim());
+  return cells;
+}
+
+function toKeyMap(headers: string[]) {
+  return headers.map((header) => header.toLowerCase().replace(/[^a-z0-9]+/g, " ").trim());
+}
+
+function findColumnIndex(headers: string[], candidates: string[]) {
+  return headers.findIndex((header) => candidates.some((candidate) => header.includes(candidate)));
+}
+
+function toIsoDate(value: string) {
+  const parsed = new Date(value);
+  return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
+}
+
+function toBrokerTone(status: BrokerConnection["status"]) {
+  switch (status) {
+    case "active":
+      return "success";
+    case "error":
+      return "danger";
+    case "pending":
+      return "warning";
+    default:
+      return "neutral";
+  }
+}
 
 export function SettingsView() {
-  const { profile, accounts, updateProfile, addAccount, removeAccount } = useTradeStore();
+  const {
+    profile,
+    accounts,
+    brokerConnections,
+    strategies,
+    saveTrade,
+    updateProfile,
+    addAccount,
+    addBrokerConnection,
+    removeBrokerConnection,
+    syncBrokerConnection,
+  } = useTradeStore();
   const [draftProfile, setDraftProfile] = useState<Partial<typeof profile>>({});
+  const [showBrokerPanel, setShowBrokerPanel] = useState(false);
+  const [brokerDraft, setBrokerDraft] = useState<BrokerDraft>({
+    broker: "alpaca",
+    label: "",
+    apiKey: "",
+    apiSecret: "",
+    accountId: "",
+    csvFile: null,
+  });
   const [newAccount, setNewAccount] = useState<AccountDraft>({
     name: "",
     broker: "",
@@ -16,6 +111,10 @@ export function SettingsView() {
     balance: 0,
     currency: "USD",
   });
+  const [brokerNotice, setBrokerNotice] = useState("");
+  const [brokerError, setBrokerError] = useState("");
+  const [syncingId, setSyncingId] = useState<string | null>(null);
+  const [connecting, setConnecting] = useState(false);
 
   const handleSaveProfile = async () => {
     const fullName = draftProfile.fullName ?? profile.fullName;
@@ -53,6 +152,159 @@ export function SettingsView() {
     });
   };
 
+  const importCsvTrades = async (file: File) => {
+    if (!accounts[0]?.id || !strategies[0]?.id) {
+      throw new Error("Create at least one ChartLore account before importing CSV trades.");
+    }
+
+    const text = await file.text();
+    const rows = text
+      .split(/\r?\n/)
+      .map((line) => line.trim())
+      .filter(Boolean);
+
+    if (rows.length < 2) {
+      throw new Error("CSV file is empty or missing trade rows.");
+    }
+
+    const headers = toKeyMap(splitCsvLine(rows[0]));
+    const symbolIndex = findColumnIndex(headers, ["symbol", "ticker", "instrument"]);
+    const sideIndex = findColumnIndex(headers, ["side", "direction"]);
+    const qtyIndex = findColumnIndex(headers, ["qty", "quantity", "size", "units"]);
+    const entryIndex = findColumnIndex(headers, ["entry"]);
+    const exitIndex = findColumnIndex(headers, ["exit", "close price"]);
+    const openTimeIndex = findColumnIndex(headers, ["open time", "opened", "entry time"]);
+    const closeTimeIndex = findColumnIndex(headers, ["close time", "closed", "exit time"]);
+
+    if (
+      symbolIndex < 0 ||
+      sideIndex < 0 ||
+      qtyIndex < 0 ||
+      entryIndex < 0 ||
+      exitIndex < 0 ||
+      openTimeIndex < 0 ||
+      closeTimeIndex < 0
+    ) {
+      throw new Error("CSV columns must include Symbol, Side/Direction, Qty, Entry, Exit, Open Time, and Close Time.");
+    }
+
+    let imported = 0;
+
+    for (const row of rows.slice(1)) {
+      const cells = splitCsvLine(row);
+      if (cells.length === 0) {
+        continue;
+      }
+
+      const symbol = cells[symbolIndex]?.trim();
+      if (!symbol) {
+        continue;
+      }
+
+      const sideRaw = cells[sideIndex]?.trim().toLowerCase();
+      const side = sideRaw?.includes("sell") || sideRaw?.includes("short") ? "short" : "long";
+      const quantity = Number(cells[qtyIndex] ?? 0);
+      const entryPrice = Number(cells[entryIndex] ?? 0);
+      const exitPrice = Number(cells[exitIndex] ?? 0);
+      const openedAt = toIsoDate(cells[openTimeIndex] ?? "");
+      const closedAt = toIsoDate(cells[closeTimeIndex] ?? "");
+
+      await saveTrade({
+        accountId: accounts[0].id,
+        strategyId: strategies[0].id,
+        symbol,
+        market: symbol,
+        side,
+        quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+        entryPrice: Number.isFinite(entryPrice) ? entryPrice : 0,
+        exitPrice: Number.isFinite(exitPrice) ? exitPrice : 0,
+        stopPrice: Number.isFinite(entryPrice) ? entryPrice : 0,
+        fees: 0,
+        setup: "CSV Import",
+        thesis: `Imported from CSV file ${file.name}`,
+        openedAt,
+        closedAt,
+        conviction: 3,
+        tags: [],
+      });
+      imported += 1;
+    }
+
+    return imported;
+  };
+
+  const handleConnectBroker = async () => {
+    setConnecting(true);
+    setBrokerError("");
+    setBrokerNotice("");
+
+    try {
+      const label = brokerDraft.label.trim() || `${brokerDraft.broker.toUpperCase()} Connection`;
+
+      if (brokerDraft.broker === "csv" && !brokerDraft.csvFile) {
+        throw new Error("Choose a CSV file before connecting.");
+      }
+
+      if (brokerDraft.broker === "alpaca" && (!brokerDraft.apiKey.trim() || !brokerDraft.apiSecret.trim())) {
+        throw new Error("Alpaca requires both API Key and API Secret.");
+      }
+
+      if (brokerDraft.broker === "oanda" && (!brokerDraft.apiKey.trim() || !brokerDraft.accountId.trim())) {
+        throw new Error("OANDA requires API Key and Account ID.");
+      }
+
+      const created = await addBrokerConnection({
+        broker: brokerDraft.broker,
+        label,
+        status: brokerDraft.broker === "manual" || brokerDraft.broker === "csv" ? "active" : "pending",
+        apiKey: brokerDraft.apiKey.trim() || undefined,
+        apiSecret: brokerDraft.apiSecret.trim() || undefined,
+        accountId: brokerDraft.accountId.trim() || undefined,
+        lastSyncedAt: undefined,
+      });
+
+      if (!created) {
+        throw new Error("Unable to create broker connection.");
+      }
+
+      if (brokerDraft.broker === "csv" && brokerDraft.csvFile) {
+        const imported = await importCsvTrades(brokerDraft.csvFile);
+        setBrokerNotice(`CSV broker linked. Imported ${imported} trade${imported === 1 ? "" : "s"}.`);
+      } else {
+        setBrokerNotice(`${label} connected successfully.`);
+      }
+
+      setShowBrokerPanel(false);
+      setBrokerDraft({
+        broker: "alpaca",
+        label: "",
+        apiKey: "",
+        apiSecret: "",
+        accountId: "",
+        csvFile: null,
+      });
+    } catch (error) {
+      setBrokerError(error instanceof Error ? error.message : "Broker connection failed.");
+    } finally {
+      setConnecting(false);
+    }
+  };
+
+  const handleSyncConnection = async (connectionId: string) => {
+    setSyncingId(connectionId);
+    setBrokerError("");
+    setBrokerNotice("");
+    const result = await syncBrokerConnection(connectionId);
+    setSyncingId(null);
+
+    if (result.error) {
+      setBrokerError(result.error);
+      return;
+    }
+
+    setBrokerNotice(`Sync completed. Imported ${result.imported} trade${result.imported === 1 ? "" : "s"}.`);
+  };
+
   return (
     <div className="space-y-6">
       <PageHeader
@@ -61,13 +313,14 @@ export function SettingsView() {
         description="This section is ready for real auth and broker wiring later, but already gives the product a coherent account-management surface."
         actions={
           <>
-            <a
-              href="#broker-roadmap"
+            <button
+              type="button"
+              onClick={() => setShowBrokerPanel((current) => !current)}
               className="inline-flex items-center justify-center gap-2 rounded-full border border-border bg-card-soft px-4 py-2.5 text-sm font-semibold text-foreground transition hover:border-accent/25"
             >
               <Link2 className="size-4" />
               Link Broker
-            </a>
+            </button>
             <a
               href="#create-account"
               className="inline-flex items-center justify-center gap-2 rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-accent-strong"
@@ -78,6 +331,143 @@ export function SettingsView() {
           </>
         }
       />
+
+      {showBrokerPanel ? (
+        <Card id="broker-panel">
+          <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-muted">Link Broker</p>
+              <h3 className="mt-2 text-2xl font-semibold">Connect a new trade source</h3>
+            </div>
+            <Button type="button" variant="secondary" onClick={() => setShowBrokerPanel(false)}>
+              Close
+            </Button>
+          </div>
+
+          <div className="mt-6 grid gap-4 md:grid-cols-2">
+            <div className="space-y-2">
+              <FieldLabel>Broker</FieldLabel>
+              <Select
+                value={brokerDraft.broker}
+                onChange={(event) =>
+                  setBrokerDraft((current) => ({
+                    ...current,
+                    broker: event.target.value as BrokerConnection["broker"],
+                  }))
+                }
+              >
+                <option value="alpaca">Alpaca</option>
+                <option value="oanda">OANDA</option>
+                <option value="csv">CSV Import</option>
+                <option value="manual">Manual</option>
+              </Select>
+            </div>
+
+            <div className="space-y-2">
+              <FieldLabel>Label</FieldLabel>
+              <TextInput
+                value={brokerDraft.label}
+                onChange={(event) =>
+                  setBrokerDraft((current) => ({ ...current, label: event.target.value }))
+                }
+              />
+            </div>
+
+            {brokerDraft.broker === "alpaca" ? (
+              <>
+                <div className="space-y-2">
+                  <FieldLabel>API Key</FieldLabel>
+                  <TextInput
+                    value={brokerDraft.apiKey}
+                    onChange={(event) =>
+                      setBrokerDraft((current) => ({ ...current, apiKey: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <FieldLabel>API Secret</FieldLabel>
+                  <TextInput
+                    type="password"
+                    value={brokerDraft.apiSecret}
+                    onChange={(event) =>
+                      setBrokerDraft((current) => ({ ...current, apiSecret: event.target.value }))
+                    }
+                  />
+                </div>
+              </>
+            ) : null}
+
+            {brokerDraft.broker === "oanda" ? (
+              <>
+                <div className="space-y-2">
+                  <FieldLabel>API Key</FieldLabel>
+                  <TextInput
+                    value={brokerDraft.apiKey}
+                    onChange={(event) =>
+                      setBrokerDraft((current) => ({ ...current, apiKey: event.target.value }))
+                    }
+                  />
+                </div>
+                <div className="space-y-2">
+                  <FieldLabel>Account ID</FieldLabel>
+                  <TextInput
+                    value={brokerDraft.accountId}
+                    onChange={(event) =>
+                      setBrokerDraft((current) => ({ ...current, accountId: event.target.value }))
+                    }
+                  />
+                </div>
+              </>
+            ) : null}
+
+            {brokerDraft.broker === "csv" ? (
+              <div className="space-y-2 md:col-span-2">
+                <FieldLabel>CSV File</FieldLabel>
+                <label className="flex cursor-pointer items-center gap-3 rounded-[22px] border border-border bg-card-soft px-4 py-3 text-sm text-muted transition hover:border-accent/25">
+                  <Upload className="size-4" />
+                  <span>{brokerDraft.csvFile?.name ?? "Choose a .csv file"}</span>
+                  <input
+                    type="file"
+                    accept=".csv,text/csv"
+                    className="hidden"
+                    onChange={(event) =>
+                      setBrokerDraft((current) => ({
+                        ...current,
+                        csvFile: event.target.files?.[0] ?? null,
+                      }))
+                    }
+                  />
+                </label>
+              </div>
+            ) : null}
+          </div>
+
+          {brokerError ? (
+            <div className="mt-4 rounded-[22px] border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger">
+              {brokerError}
+            </div>
+          ) : null}
+
+          <div className="mt-6 flex justify-end">
+            <Button type="button" onClick={handleConnectBroker} disabled={connecting}>
+              {connecting ? "Connecting..." : "Connect"}
+            </Button>
+          </div>
+        </Card>
+      ) : null}
+
+      {brokerNotice ? (
+        <div className="rounded-[22px] border border-success/20 bg-success/10 px-4 py-3 text-sm text-success">
+          {brokerNotice}
+        </div>
+      ) : null}
+
+      {brokerError ? (
+        <div className="rounded-[22px] border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger">
+          {brokerError}
+        </div>
+      ) : null}
+
       <div className="grid gap-4 xl:grid-cols-[1.15fr_0.85fr]">
         <Card>
           <div className="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
@@ -154,24 +544,50 @@ export function SettingsView() {
             </div>
           </div>
         </Card>
+
         <Card id="broker-roadmap">
-          <p className="text-[11px] uppercase tracking-[0.28em] text-muted">Broker Roadmap</p>
-          <h3 className="mt-2 text-2xl font-semibold">Integration status</h3>
+          <p className="text-[11px] uppercase tracking-[0.28em] text-muted">Broker Connections</p>
+          <h3 className="mt-2 text-2xl font-semibold">Live sync sources</h3>
           <div className="mt-6 space-y-3">
-            {accounts.map((account) => (
-              <div key={account.id} className="rounded-[22px] border border-border bg-card-soft p-4">
-                <div className="flex items-center justify-between gap-3">
+            {brokerConnections.length === 0 ? (
+              <div className="rounded-[22px] border border-border bg-card-soft p-4 text-sm text-muted">
+                No broker connections yet. Link Alpaca, OANDA, CSV imports, or manual journaling.
+              </div>
+            ) : null}
+
+            {brokerConnections.map((connection) => (
+              <div key={connection.id} className="rounded-[22px] border border-border bg-card-soft p-4">
+                <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
                   <div>
-                    <p className="font-semibold">{account.name}</p>
-                    <p className="mt-1 text-xs text-muted">{account.broker}</p>
+                    <div className="flex items-center gap-2">
+                      <p className="font-semibold">{connection.label}</p>
+                      <Badge tone={toBrokerTone(connection.status)}>
+                        {connection.status}
+                      </Badge>
+                    </div>
+                    <p className="mt-1 text-xs uppercase tracking-[0.2em] text-muted">
+                      {connection.broker}
+                    </p>
+                    <p className="mt-2 text-xs text-muted">
+                      Last synced: {connection.lastSyncedAt ? new Date(connection.lastSyncedAt).toLocaleString() : "Never"}
+                    </p>
                   </div>
+
                   <div className="flex items-center gap-2">
-                    <Badge tone="accent">Manual Sync</Badge>
+                    <Button
+                      type="button"
+                      variant="secondary"
+                      onClick={() => void handleSyncConnection(connection.id)}
+                      disabled={syncingId === connection.id}
+                    >
+                      <RefreshCw className={`mr-2 size-4 ${syncingId === connection.id ? "animate-spin" : ""}`} />
+                      {syncingId === connection.id ? "Syncing..." : "Sync Now"}
+                    </Button>
                     <button
                       type="button"
-                      onClick={() => void removeAccount(account.id)}
+                      onClick={() => void removeBrokerConnection(connection.id)}
                       className="inline-flex items-center justify-center rounded-full border border-danger/20 bg-danger-soft p-2 text-danger transition hover:border-danger/35"
-                      aria-label={`Delete ${account.name}`}
+                      aria-label={`Remove ${connection.label}`}
                     >
                       <Trash2 className="size-4" />
                     </button>

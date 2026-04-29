@@ -15,6 +15,7 @@ import { notifyStorageChange, STORAGE_KEYS } from "@/lib/storage";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 import type {
   Account,
+  BrokerConnection,
   DailySnapshot,
   Profile,
   Strategy,
@@ -56,6 +57,7 @@ export interface AccountDraft {
 interface TradeStoreValue {
   profile: Profile;
   accounts: Account[];
+  brokerConnections: BrokerConnection[];
   strategies: Strategy[];
   tags: TradeTag[];
   notes: TradeNote[];
@@ -69,6 +71,11 @@ interface TradeStoreValue {
   addAccount: (draft: AccountDraft) => Promise<Account | undefined>;
   removeAccount: (accountId: string) => Promise<void>;
   removeTag: (tagId: string) => Promise<void>;
+  addBrokerConnection: (
+    draft: Omit<BrokerConnection, "id" | "userId" | "createdAt">,
+  ) => Promise<BrokerConnection | undefined>;
+  removeBrokerConnection: (id: string) => Promise<void>;
+  syncBrokerConnection: (id: string) => Promise<{ imported: number; error?: string }>;
 }
 
 type ProfileRow = {
@@ -161,6 +168,19 @@ type DailySnapshotRow = {
   net_pnl: number;
   account_balance: number;
   drawdown: number;
+};
+
+type BrokerConnectionRow = {
+  id: string;
+  user_id: string;
+  broker: BrokerConnection["broker"];
+  label: string;
+  status: BrokerConnection["status"];
+  api_key: string | null;
+  api_secret: string | null;
+  account_id: string | null;
+  last_synced_at: string | null;
+  created_at: string;
 };
 
 const TradeStoreContext = createContext<TradeStoreValue | null>(null);
@@ -271,6 +291,21 @@ function snapshotFromRow(row: DailySnapshotRow): DailySnapshot {
   };
 }
 
+function brokerConnectionFromRow(row: BrokerConnectionRow): BrokerConnection {
+  return {
+    id: row.id,
+    userId: row.user_id,
+    broker: row.broker,
+    label: row.label,
+    status: row.status,
+    apiKey: row.api_key ?? undefined,
+    apiSecret: row.api_secret ?? undefined,
+    accountId: row.account_id ?? undefined,
+    lastSyncedAt: row.last_synced_at ?? undefined,
+    createdAt: row.created_at,
+  };
+}
+
 function tradeFromRow(
   row: TradeRow,
   tagLinks: TradeTagLinkRow[],
@@ -362,6 +397,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
   const [trades, setTrades] = useState<Trade[]>(() =>
     hasSupa ? [] : getStoredItem(STORAGE_KEYS.trades, seedTrades),
   );
+  const [brokerConnections, setBrokerConnections] = useState<BrokerConnection[]>([]);
 
   const supabase = getSupabaseBrowserClient();
   const isSupabaseMode = Boolean(supabase && session && session.id !== "demo-user");
@@ -476,6 +512,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
         notesResult,
         executionsResult,
         snapshotsResult,
+        brokerConnectionsResult,
       ] = await Promise.all([
         supabase.from("profiles").select("*").eq("id", userId).single<ProfileRow>(),
         supabase.from("accounts").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
@@ -486,6 +523,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
         supabase.from("trade_notes").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
         supabase.from("trade_executions").select("*").eq("user_id", userId).order("executed_at", { ascending: false }),
         supabase.from("daily_snapshots").select("*").eq("user_id", userId).order("date", { ascending: false }),
+        supabase.from("broker_connections").select("*").eq("user_id", userId).order("created_at", { ascending: false }),
       ]);
 
       if (cancelled) {
@@ -501,6 +539,9 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
       if (notesResult.error) console.error("Failed to fetch notes", notesResult.error);
       if (executionsResult.error) console.error("Failed to fetch executions", executionsResult.error);
       if (snapshotsResult.error) console.error("Failed to fetch snapshots", snapshotsResult.error);
+      if (brokerConnectionsResult.error) {
+        console.error("Failed to fetch broker connections", brokerConnectionsResult.error);
+      }
 
       const nextNotes = (notesResult.data ?? []).map((row) => noteFromRow(row as TradeNoteRow));
       const nextExecutions = (executionsResult.data ?? []).map((row) =>
@@ -514,6 +555,11 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
       setNotes(nextNotes);
       setExecutions(nextExecutions);
       setDailySnapshots((snapshotsResult.data ?? []).map((row) => snapshotFromRow(row as DailySnapshotRow)));
+      setBrokerConnections(
+        (brokerConnectionsResult.data ?? []).map((row) =>
+          brokerConnectionFromRow(row as BrokerConnectionRow),
+        ),
+      );
       setTrades(
         (tradesResult.data ?? []).map((row) =>
           tradeFromRow(
@@ -537,6 +583,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
     () => ({
       profile: safeProfile,
       accounts,
+      brokerConnections,
       strategies,
       tags,
       notes,
@@ -807,8 +854,116 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
           })),
         );
       },
+      async addBrokerConnection(draft) {
+        if (!isSupabaseMode || !supabase || !session) {
+          const nextConnection: BrokerConnection = {
+            id: `broker-${Date.now()}`,
+            userId: safeProfile.id,
+            createdAt: new Date().toISOString(),
+            ...draft,
+          };
+          setBrokerConnections((current) => [nextConnection, ...current]);
+          return nextConnection;
+        }
+
+        const result = await supabase
+          .from("broker_connections")
+          .insert({
+            user_id: session.id,
+            broker: draft.broker,
+            label: draft.label,
+            status: draft.status,
+            api_key: draft.apiKey ?? null,
+            api_secret: draft.apiSecret ?? null,
+            account_id: draft.accountId ?? null,
+            last_synced_at: draft.lastSyncedAt ?? null,
+          })
+          .select("*")
+          .single<BrokerConnectionRow>();
+
+        if (result.error || !result.data) {
+          console.error("Failed to create broker connection", result.error);
+          return undefined;
+        }
+
+        const nextConnection = brokerConnectionFromRow(result.data as BrokerConnectionRow);
+        setBrokerConnections((current) => [nextConnection, ...current]);
+        return nextConnection;
+      },
+      async removeBrokerConnection(id) {
+        if (!isSupabaseMode || !supabase || !session) {
+          setBrokerConnections((current) => current.filter((connection) => connection.id !== id));
+          return;
+        }
+
+        const result = await supabase
+          .from("broker_connections")
+          .delete()
+          .eq("user_id", session.id)
+          .eq("id", id);
+
+        if (result.error) {
+          console.error("Failed to remove broker connection", result.error);
+          return;
+        }
+
+        setBrokerConnections((current) => current.filter((connection) => connection.id !== id));
+      },
+      async syncBrokerConnection(id) {
+        if (!isSupabaseMode) {
+          return { imported: 0, error: "Broker sync requires Supabase mode." };
+        }
+
+        try {
+          const response = await fetch("/api/broker/sync", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({ connectionId: id }),
+          });
+
+          const payload = (await response.json()) as { imported?: number; error?: string };
+
+          if (!response.ok || payload.error) {
+            return { imported: payload.imported ?? 0, error: payload.error ?? "Broker sync failed." };
+          }
+
+          setBrokerConnections((current) =>
+            current.map((connection) =>
+              connection.id === id
+                ? {
+                    ...connection,
+                    status: "active",
+                    lastSyncedAt: new Date().toISOString(),
+                  }
+                : connection,
+            ),
+          );
+
+          return { imported: payload.imported ?? 0 };
+        } catch (error) {
+          return {
+            imported: 0,
+            error: error instanceof Error ? error.message : "Broker sync failed.",
+          };
+        }
+      },
     }),
-    [accounts, dailySnapshots, executions, isSupabaseMode, notes, safeProfile, session, strategies, supabase, tags, trades],
+    [
+      accounts,
+      brokerConnections,
+      dailySnapshots,
+      executions,
+      isSupabaseMode,
+      notes,
+      safeProfile,
+      session,
+      strategies,
+      supabase,
+      tags,
+      trades,
+    ],
   );
 
   return <TradeStoreContext.Provider value={value}>{children}</TradeStoreContext.Provider>;

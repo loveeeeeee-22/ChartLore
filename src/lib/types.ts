@@ -67,6 +67,19 @@ export interface DailySnapshot {
   drawdown: number;
 }
 
+export interface BrokerConnection {
+  id: string;
+  userId: string;
+  broker: "alpaca" | "oanda" | "csv" | "manual";
+  label: string;
+  status: "active" | "error" | "pending" | "disconnected";
+  apiKey?: string;
+  apiSecret?: string;
+  accountId?: string;
+  lastSyncedAt?: string;
+  createdAt: string;
+}
+
 export interface Trade {
   id: string;
   userId: string;
