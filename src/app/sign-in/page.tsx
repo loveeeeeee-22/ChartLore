@@ -1,6 +1,6 @@
 "use client";
 
-import { Suspense, useEffect, useState } from "react";
+import { Suspense, useEffect, useRef, useState } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, Lock, UserPlus } from "lucide-react";
 import { Button, Card, FieldLabel, TextInput } from "@/components/common/primitives";
@@ -11,11 +11,8 @@ function SignInScreen() {
   const searchParams = useSearchParams();
   const { signIn, signUp, signOut, session, loading } = useAuth();
   const verified = searchParams.get("verified") === "1";
-  const initialMode = verified
-    ? "sign-in"
-    : searchParams.get("mode") === "sign-up"
-      ? "sign-up"
-      : "sign-in";
+  const initialMode =
+    searchParams.get("mode") === "sign-up" && !verified ? "sign-up" : "sign-in";
   const [mode, setMode] = useState<"sign-in" | "sign-up">(initialMode);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -26,15 +23,18 @@ function SignInScreen() {
     verified ? "Email verified. Please sign in with your credentials to continue." : "",
   );
   const [pending, setPending] = useState(false);
+  const clearedVerifiedSessionRef = useRef(false);
 
   useEffect(() => {
-    if (!loading && session && !verified) {
-      router.replace("/dashboard?onboarding=account");
+    if (loading) return;
+    if (session) {
+      router.replace("/dashboard");
     }
-  }, [loading, router, session, verified]);
+  }, [loading, session, router]);
 
   useEffect(() => {
-    if (!loading && verified && session) {
+    if (!loading && verified && session && !clearedVerifiedSessionRef.current) {
+      clearedVerifiedSessionRef.current = true;
       void signOut();
     }
   }, [loading, session, signOut, verified]);
@@ -67,8 +67,6 @@ function SignInScreen() {
       setNotice("Account created. Check your email to verify your account before signing in.");
       return;
     }
-
-    router.push("/dashboard?onboarding=account");
   };
 
   return (
