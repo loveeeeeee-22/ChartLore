@@ -471,7 +471,6 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
 
       if (!strategiesSeedCheck.error && (strategiesSeedCheck.data?.length ?? 0) === 0) {
         const seededStrategies = seedStrategies.map((strategy) => ({
-          id: strategy.id,
           user_id: userId,
           name: strategy.name,
           slug: strategy.slug,
@@ -482,7 +481,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
           strategy_tags: strategy.tags,
         }));
         const strategyInsert = await supabase.from("strategies").upsert(seededStrategies, {
-          onConflict: "id",
+          onConflict: "user_id,slug",
         });
         if (strategyInsert.error) {
           console.error("Failed to seed strategies", strategyInsert.error);
@@ -491,12 +490,13 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
 
       if (!tagsSeedCheck.error && (tagsSeedCheck.data?.length ?? 0) === 0) {
         const seededTags = seedTags.map((tag) => ({
-          id: tag.id,
           user_id: userId,
           label: tag.label,
           tone: tag.tone,
         }));
-        const tagInsert = await supabase.from("tags").upsert(seededTags, { onConflict: "id" });
+        const tagInsert = await supabase.from("tags").upsert(seededTags, {
+          onConflict: "user_id,label",
+        });
         if (tagInsert.error) {
           console.error("Failed to seed tags", tagInsert.error);
         }
