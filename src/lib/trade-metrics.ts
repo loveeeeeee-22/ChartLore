@@ -197,14 +197,38 @@ export function getDashboardMetrics(trades: TradeWithMetrics[], snapshots: Daily
 }
 
 export function getEquityCurve(trades: TradeWithMetrics[]) {
-  let cumulative = 0;
-  return [...trades]
-    .reverse()
-    .map((trade) => {
-      cumulative += trade.pnl;
-      return {
-        id: trade.id,
+  const tradesByDay = [...trades]
+    .reduce<
+      Array<{
+        date: string;
+        label: string;
+        dailyPnl: number;
+      }>
+    >((days, trade) => {
+      const date = format(parseISO(trade.closedAt), "yyyy-MM-dd");
+      const existingDay = days.find((day) => day.date === date);
+
+      if (existingDay) {
+        existingDay.dailyPnl = Number((existingDay.dailyPnl + trade.pnl).toFixed(2));
+        return days;
+      }
+
+      days.push({
+        date,
         label: format(parseISO(trade.closedAt), "MMM d"),
+        dailyPnl: Number(trade.pnl.toFixed(2)),
+      });
+      return days;
+    }, [])
+    .sort((a, b) => (a.date > b.date ? 1 : -1));
+
+  let cumulative = 0;
+  return tradesByDay.map((day) => {
+      cumulative += day.dailyPnl;
+      return {
+        id: day.date,
+        label: day.label,
+        dailyPnl: day.dailyPnl,
         value: Number(cumulative.toFixed(2)),
       };
     });

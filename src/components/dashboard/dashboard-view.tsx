@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useState } from "react";
 import { useSearchParams } from "next/navigation";
 import { ArrowRight, CircleDollarSign, Target, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge, Card } from "@/components/common/primitives";
@@ -32,6 +33,7 @@ export function DashboardView() {
   const notes = getRecentNotes(filteredTrades, store.notes);
   const strategyRollups = getStrategyRollups(filteredTrades, store.strategies);
   const holdBuckets = getHoldTimeBuckets(filteredTrades);
+  const [hoveredEquityBarId, setHoveredEquityBarId] = useState<string | null>(null);
   const recentTrades = filteredTrades.slice(0, 5);
   const highestPoint = Math.max(...equityCurve.map((point) => point.value), 1);
   const weakestBucket = [...holdBuckets].sort((a, b) => a.winRate - b.winRate)[0];
@@ -173,19 +175,34 @@ export function DashboardView() {
           </div>
           <div className="mt-8 flex min-h-[280px] items-end gap-2">
             {equityCurve.map((point) => (
-              <div key={point.id} className="group flex flex-1 flex-col items-center gap-3">
+              <div key={point.id} className="flex flex-1 flex-col items-center gap-3">
                 <div className="flex h-[240px] w-full items-end">
-                  <div
-                    className="relative w-full rounded-t-[18px] border border-accent/20 bg-gradient-to-t from-accent-soft to-accent/70 transition duration-150 group-hover:scale-y-[1.02] group-hover:border-accent/45"
+                  <button
+                    type="button"
+                    onMouseEnter={() => setHoveredEquityBarId(point.id)}
+                    onMouseLeave={() => setHoveredEquityBarId((current) => (current === point.id ? null : current))}
+                    onFocus={() => setHoveredEquityBarId(point.id)}
+                    onBlur={() => setHoveredEquityBarId((current) => (current === point.id ? null : current))}
+                    className="relative w-full rounded-t-[18px] border border-accent/20 bg-gradient-to-t from-accent-soft to-accent/70 transition duration-150 hover:scale-y-[1.02] hover:border-accent/45 focus:scale-y-[1.02] focus:border-accent/45 focus:outline-none"
                     style={{
                       height: `${Math.max((point.value / highestPoint) * 100, 10)}%`,
                     }}
+                    aria-label={`${point.label}: daily ${formatCurrency(point.dailyPnl)}, cumulative ${formatCurrency(point.value)}`}
                   >
-                    <div className="pointer-events-none absolute bottom-full left-1/2 mb-2 hidden -translate-x-1/2 rounded-xl border border-border bg-sidebar px-3 py-2 text-[11px] text-foreground shadow-2xl group-hover:block">
-                      {point.label}
-                      <div className="mt-1 font-semibold">{formatCurrency(point.value)}</div>
+                    <div
+                      className={`pointer-events-none absolute bottom-full left-1/2 mb-2 -translate-x-1/2 rounded-xl border border-border bg-sidebar px-3 py-2 text-[11px] text-foreground shadow-2xl transition duration-150 ${
+                        hoveredEquityBarId === point.id ? "opacity-100" : "opacity-0"
+                      }`}
+                    >
+                      <div>{point.label}</div>
+                      <div className="mt-1 font-semibold">
+                        Daily {formatCurrency(point.dailyPnl)}
+                      </div>
+                      <div className="mt-1 text-muted">
+                        Curve {formatCurrency(point.value)}
+                      </div>
                     </div>
-                  </div>
+                  </button>
                 </div>
                 <div className="text-center">
                   <p className="text-[10px] uppercase tracking-[0.24em] text-muted">{point.label}</p>
