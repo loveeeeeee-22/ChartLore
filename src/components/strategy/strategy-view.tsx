@@ -1,8 +1,17 @@
 "use client";
 
+import { useState } from "react";
 import Link from "next/link";
 import { ArrowRight } from "lucide-react";
-import { Badge, Button, Card } from "@/components/common/primitives";
+import {
+  Badge,
+  Button,
+  Card,
+  FieldLabel,
+  Select,
+  TextArea,
+  TextInput,
+} from "@/components/common/primitives";
 import { PageHeader } from "@/components/common/page-header";
 import { useTradeStore } from "@/components/providers/trade-store-provider";
 import { filterTrades, formatCurrency, getStrategyRollups } from "@/lib/trade-metrics";
@@ -12,6 +21,37 @@ export function StrategyView() {
   const store = useTradeStore();
   const filters = useFilters();
   const strategyRollups = getStrategyRollups(filterTrades(store.trades, filters), store.strategies);
+  const [showCreatePanel, setShowCreatePanel] = useState(false);
+  const [strategyName, setStrategyName] = useState("");
+  const [strategyRules, setStrategyRules] = useState("");
+  const [strategyError, setStrategyError] = useState("");
+  const [creating, setCreating] = useState(false);
+  const leadStrategy = strategyRollups[0];
+
+  const handleCreateStrategy = async () => {
+    setStrategyError("");
+
+    if (!strategyName.trim() || !strategyRules.trim()) {
+      setStrategyError("Add a strategy name and at least one rule.");
+      return;
+    }
+
+    setCreating(true);
+    const created = await store.addStrategy({
+      name: strategyName,
+      rules: strategyRules,
+    });
+    setCreating(false);
+
+    if (!created) {
+      setStrategyError("Unable to create strategy right now.");
+      return;
+    }
+
+    setStrategyName("");
+    setStrategyRules("");
+    setShowCreatePanel(false);
+  };
 
   return (
     <div className="space-y-6">
@@ -20,56 +60,110 @@ export function StrategyView() {
         title="Playbooks, expectancy, and consistency in one place"
         description="Each strategy is measured from the same centralized trade math, so your dashboard, reports, and analytics stay in agreement."
         actions={
-          <Button>Create Strategy</Button>
+          <Button type="button" onClick={() => setShowCreatePanel((current) => !current)}>
+            Create Strategy
+          </Button>
         }
       />
+      {showCreatePanel ? (
+        <Card>
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-muted">New Strategy</p>
+              <h3 className="mt-2 text-2xl font-semibold">Define your playbook</h3>
+            </div>
+            <Button type="button" variant="secondary" onClick={() => setShowCreatePanel(false)}>
+              Close
+            </Button>
+          </div>
+          <div className="mt-6 grid gap-4">
+            <div className="space-y-2">
+              <FieldLabel>Strategy Name</FieldLabel>
+              <TextInput value={strategyName} onChange={(event) => setStrategyName(event.target.value)} />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel>Rules</FieldLabel>
+              <TextArea
+                rows={6}
+                value={strategyRules}
+                onChange={(event) => setStrategyRules(event.target.value)}
+                placeholder="Write the rules, conditions, and execution notes for this strategy."
+              />
+            </div>
+            {strategyError ? (
+              <div className="rounded-[22px] border border-danger/20 bg-danger-soft px-4 py-3 text-sm text-danger">
+                {strategyError}
+              </div>
+            ) : null}
+            <div className="flex justify-end">
+              <Button type="button" onClick={handleCreateStrategy} disabled={creating}>
+                {creating ? "Creating..." : "Save Strategy"}
+              </Button>
+            </div>
+          </div>
+        </Card>
+      ) : null}
       <div className="grid gap-4 xl:grid-cols-[1.1fr_0.9fr]">
         <Card>
           <p className="text-[11px] uppercase tracking-[0.28em] text-muted">Lead Playbook</p>
-          <h3 className="mt-2 text-3xl font-semibold">{strategyRollups[0]?.name}</h3>
+          <h3 className="mt-2 text-3xl font-semibold">{leadStrategy?.name ?? "No strategies yet"}</h3>
           <div className="mt-5 grid gap-4 md:grid-cols-2">
             <div className="rounded-[24px] border border-success/18 bg-success-soft p-5">
               <p className="text-sm text-success">Net P&L</p>
               <p className="mt-2 text-2xl font-semibold text-foreground">
-                {formatCurrency(strategyRollups[0]?.netPnl ?? 0)}
+                {formatCurrency(leadStrategy?.netPnl ?? 0)}
               </p>
             </div>
             <div className="rounded-[24px] border border-accent/18 bg-accent-soft p-5">
               <p className="text-sm text-accent">Win Rate</p>
               <p className="mt-2 text-2xl font-semibold text-foreground">
-                {strategyRollups[0]?.winRate ?? 0}%
+                {leadStrategy?.winRate ?? 0}%
               </p>
             </div>
           </div>
           <p className="mt-6 max-w-2xl text-sm leading-7 text-muted">
-            {store.strategies.find((strategy) => strategy.id === strategyRollups[0]?.strategyId)?.thesis}
+            {store.strategies.find((strategy) => strategy.id === leadStrategy?.strategyId)?.thesis ??
+              "Create your first strategy to start tracking named playbooks and rules here."}
           </p>
         </Card>
 
         <Card>
           <p className="text-[11px] uppercase tracking-[0.28em] text-muted">Blueprint Priorities</p>
           <div className="mt-5 space-y-3">
-            {store.strategies.map((strategy) => (
-              <div key={strategy.id} className="rounded-[22px] border border-border bg-card-soft p-4">
-                <div className="flex items-center justify-between gap-3">
-                  <div>
-                    <p className="font-semibold">{strategy.name}</p>
-                    <p className="mt-1 text-xs text-muted">{strategy.playbook}</p>
+            {store.strategies.length > 0 ? (
+              store.strategies.map((strategy) => (
+                <div key={strategy.id} className="rounded-[22px] border border-border bg-card-soft p-4">
+                  <div className="flex items-center justify-between gap-3">
+                    <div>
+                      <p className="font-semibold">{strategy.name}</p>
+                      <p className="mt-1 text-xs text-muted">{strategy.playbook}</p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      <Badge tone={strategy.status === "active" ? "success" : "warning"}>
+                        {strategy.status === "active" ? "In Play" : "Being Revised"}
+                      </Badge>
+                      <Select
+                        value={strategy.status === "active" ? "active" : "revising"}
+                        onChange={(event) =>
+                          void store.updateStrategyStatus(
+                            strategy.id,
+                            event.target.value as "active" | "revising",
+                          )
+                        }
+                        className="min-w-[160px]"
+                      >
+                        <option value="active">In Play</option>
+                        <option value="revising">Being Revised</option>
+                      </Select>
+                    </div>
                   </div>
-                  <Badge
-                    tone={
-                      strategy.status === "active"
-                        ? "success"
-                        : strategy.status === "revising"
-                          ? "warning"
-                          : "neutral"
-                    }
-                  >
-                    {strategy.status}
-                  </Badge>
                 </div>
+              ))
+            ) : (
+              <div className="rounded-[22px] border border-border bg-card-soft p-4 text-sm text-muted">
+                No strategies yet. Create one to define the rules you want ChartLore to track.
               </div>
-            ))}
+            )}
           </div>
         </Card>
       </div>
@@ -98,18 +192,26 @@ export function StrategyView() {
               </tr>
             </thead>
             <tbody className="divide-y divide-border text-sm">
-              {strategyRollups.map((strategy) => (
-                <tr key={strategy.strategyId}>
-                  <td className="px-5 py-4 font-semibold">{strategy.name}</td>
-                  <td className="px-5 py-4 capitalize">{strategy.status}</td>
-                  <td className="px-5 py-4">{strategy.totalTrades}</td>
-                  <td className="px-5 py-4">{formatCurrency(strategy.expectancy)}</td>
-                  <td className="px-5 py-4">{strategy.consistency}/100</td>
-                  <td className="px-5 py-4 text-right font-semibold text-success">
-                    {formatCurrency(strategy.netPnl)}
+              {strategyRollups.length > 0 ? (
+                strategyRollups.map((strategy) => (
+                  <tr key={strategy.strategyId}>
+                    <td className="px-5 py-4 font-semibold">{strategy.name}</td>
+                    <td className="px-5 py-4 capitalize">{strategy.status}</td>
+                    <td className="px-5 py-4">{strategy.totalTrades}</td>
+                    <td className="px-5 py-4">{formatCurrency(strategy.expectancy)}</td>
+                    <td className="px-5 py-4">{strategy.consistency}/100</td>
+                    <td className="px-5 py-4 text-right font-semibold text-success">
+                      {formatCurrency(strategy.netPnl)}
+                    </td>
+                  </tr>
+                ))
+              ) : (
+                <tr>
+                  <td colSpan={6} className="px-5 py-10 text-center text-sm text-muted">
+                    No strategies yet. Create one above to start building your strategy library.
                   </td>
                 </tr>
-              ))}
+              )}
             </tbody>
           </table>
         </div>

@@ -54,6 +54,11 @@ export interface AccountDraft {
   currency: string;
 }
 
+export interface StrategyDraft {
+  name: string;
+  rules: string;
+}
+
 interface TradeStoreValue {
   profile: Profile;
   accounts: Account[];
@@ -69,6 +74,8 @@ interface TradeStoreValue {
   updateProfile: (nextProfile: Profile) => Promise<void>;
   addTag: (label: string) => Promise<TradeTag | undefined>;
   addAccount: (draft: AccountDraft) => Promise<Account | undefined>;
+  addStrategy: (draft: StrategyDraft) => Promise<Strategy | undefined>;
+  updateStrategyStatus: (strategyId: string, status: Strategy["status"]) => Promise<void>;
   removeAccount: (accountId: string) => Promise<void>;
   removeTag: (tagId: string) => Promise<void>;
   addBrokerConnection: (
@@ -192,6 +199,27 @@ function buildInitials(fullName: string) {
     .join("")
     .slice(0, 2)
     .toUpperCase();
+}
+
+function slugifyStrategyName(name: string) {
+  return name
+    .toLowerCase()
+    .trim()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "");
+}
+
+function ensureUniqueStrategySlug(name: string, existingStrategies: Strategy[]) {
+  const base = slugifyStrategyName(name) || "strategy";
+  let nextSlug = base;
+  let suffix = 2;
+
+  while (existingStrategies.some((strategy) => strategy.slug === nextSlug)) {
+    nextSlug = `${base}-${suffix}`;
+    suffix += 1;
+  }
+
+  return nextSlug;
 }
 
 function getStoredItem<T>(key: string, fallback: T) {
@@ -408,8 +436,8 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
         ? {
             id: session.id,
             email: session.email,
-            fullName: session.fullName || "ChartLore Trader",
-            initials: buildInitials(session.fullName || "ChartLore Trader"),
+            fullName: session.fullName || "",
+            initials: buildInitials(session.fullName || ""),
             tier: "pro" as const,
             focus: "",
             country: "",
@@ -437,8 +465,8 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
       const profileFallback: Profile = {
         id: userId,
         email: session.email,
-        fullName: session.fullName || "ChartLore Trader",
-        initials: buildInitials(session.fullName || "ChartLore Trader"),
+        fullName: session.fullName || "",
+        initials: buildInitials(session.fullName || ""),
         tier: "pro",
         focus: "",
         country: "",
@@ -461,44 +489,6 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
         const insertResult = await supabase.from("profiles").insert(toProfileInsert(profileFallback));
         if (insertResult.error) {
           console.error("Failed to create profile", insertResult.error);
-        }
-      }
-
-      const [strategiesSeedCheck, tagsSeedCheck] = await Promise.all([
-        supabase.from("strategies").select("id").eq("user_id", userId).limit(1),
-        supabase.from("tags").select("id").eq("user_id", userId).limit(1),
-      ]);
-
-      if (!strategiesSeedCheck.error && (strategiesSeedCheck.data?.length ?? 0) === 0) {
-        const seededStrategies = seedStrategies.map((strategy) => ({
-          user_id: userId,
-          name: strategy.name,
-          slug: strategy.slug,
-          status: strategy.status,
-          playbook: strategy.playbook,
-          thesis: strategy.thesis,
-          timeframes: strategy.timeframes,
-          strategy_tags: strategy.tags,
-        }));
-        const strategyInsert = await supabase.from("strategies").upsert(seededStrategies, {
-          onConflict: "user_id,slug",
-        });
-        if (strategyInsert.error) {
-          console.error("Failed to seed strategies", strategyInsert.error);
-        }
-      }
-
-      if (!tagsSeedCheck.error && (tagsSeedCheck.data?.length ?? 0) === 0) {
-        const seededTags = seedTags.map((tag) => ({
-          user_id: userId,
-          label: tag.label,
-          tone: tag.tone,
-        }));
-        const tagInsert = await supabase.from("tags").upsert(seededTags, {
-          onConflict: "user_id,label",
-        });
-        if (tagInsert.error) {
-          console.error("Failed to seed tags", tagInsert.error);
         }
       }
 
@@ -763,6 +753,80 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
         const nextAccount = accountFromRow(result.data as AccountRow);
         setAccounts((current) => [nextAccount, ...current]);
         return nextAccount;
+      },
+      async addStrategy(draft) {
+        const cleanName = draft.name.trim();
+        const cleanRules = draft.rules.trim();
+        if (!cleanName || !cleanRules) {
+          return undefined;
+        }
+
+        const nextSlug = ensureUniqueStrategySlug(cleanName, strategies);
+
+        if (!isSupabaseMode || !supabase || !session) {
+          const nextStrategy: Strategy = {
+            id: `strategy-${Date.now()}`,
+            userId: safeProfile.id,
+            name: cleanName,
+            slug: nextSlug,
+            status: "active",
+            playbook: "Rule-based",
+            thesis: cleanRules,
+            timeframes: [],
+            tags: [],
+          };
+          setStrategies((current) => [nextStrategy, ...current]);
+          return nextStrategy;
+        }
+
+        const result = await supabase
+          .from("strategies")
+          .insert({
+            user_id: session.id,
+            name: cleanName,
+            slug: nextSlug,
+            status: "active",
+            playbook: "Rule-based",
+            thesis: cleanRules,
+            timeframes: [],
+            strategy_tags: [],
+          })
+          .select("*")
+          .single<StrategyRow>();
+
+        if (result.error || !result.data) {
+          console.error("Failed to create strategy", result.error);
+          return undefined;
+        }
+
+        const nextStrategy = strategyFromRow(result.data as StrategyRow);
+        setStrategies((current) => [nextStrategy, ...current]);
+        return nextStrategy;
+      },
+      async updateStrategyStatus(strategyId, status) {
+        if (!isSupabaseMode || !supabase || !session) {
+          setStrategies((current) =>
+            current.map((strategy) =>
+              strategy.id === strategyId ? { ...strategy, status } : strategy,
+            ),
+          );
+          return;
+        }
+
+        const result = await supabase
+          .from("strategies")
+          .update({ status })
+          .eq("user_id", session.id)
+          .eq("id", strategyId);
+
+        if (result.error) {
+          console.error("Failed to update strategy status", result.error);
+          return;
+        }
+
+        setStrategies((current) =>
+          current.map((strategy) => (strategy.id === strategyId ? { ...strategy, status } : strategy)),
+        );
       },
       async removeAccount(accountId) {
         if (accounts.length <= 1) {

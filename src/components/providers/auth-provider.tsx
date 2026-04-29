@@ -23,7 +23,7 @@ function buildSession(id: string, email: string, fullName?: string | null): User
   return {
     id,
     email,
-    fullName: fullName?.trim() || email.split("@")[0]?.replace(/\./g, " ") || "ChartLore Trader",
+    fullName: fullName?.trim() || "",
   };
 }
 
