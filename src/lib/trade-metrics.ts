@@ -66,10 +66,13 @@ export interface HeatmapCell {
 }
 
 export interface MaeMfePoint {
+  id: string;
   symbol: string;
   setup: string;
   mae: number;
   mfe: number;
+  pnl: number;
+  outcome: TradeOutcome;
 }
 
 export interface RuleAdherenceCell {
@@ -312,32 +315,23 @@ export function getHeatmap(trades: TradeWithMetrics[]) {
 }
 
 export function getMaeMfeSeries(trades: TradeWithMetrics[]): MaeMfePoint[] {
-  return trades.slice(0, 8).map((trade) => ({
-    symbol: trade.symbol,
-    setup: trade.setup,
-    mae: Number(
-      Math.max(
-        0.15,
-        Math.min(
-          4,
-          trade.outcome === "loss"
-            ? Math.abs(trade.rMultiple) * 0.95
-            : Math.max(0.25, Math.abs(trade.rMultiple) * 0.38),
-        ),
-      ).toFixed(2),
-    ),
-    mfe: Number(
-      Math.max(
-        0.25,
-        Math.min(
-          5,
-          trade.outcome === "win"
-            ? Math.max(trade.rMultiple, 0.5) * 1.18
-            : Math.max(0.4, Math.abs(trade.rMultiple) * 0.72),
-        ),
-      ).toFixed(2),
-    ),
-  }));
+  return trades
+    .filter(
+      (trade) =>
+        typeof trade.maeR === "number" &&
+        Number.isFinite(trade.maeR) &&
+        typeof trade.mfeR === "number" &&
+        Number.isFinite(trade.mfeR),
+    )
+    .map((trade) => ({
+      id: trade.id,
+      symbol: trade.symbol,
+      setup: trade.setup,
+      mae: Number(Math.max(0, trade.maeR ?? 0).toFixed(2)),
+      mfe: Number(Math.max(0, trade.mfeR ?? 0).toFixed(2)),
+      pnl: trade.pnl,
+      outcome: trade.outcome,
+    }));
 }
 
 export function getRuleAdherenceHeatmap(trades: TradeWithMetrics[]): RuleAdherenceCell[] {

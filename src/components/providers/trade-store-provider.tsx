@@ -43,6 +43,8 @@ export interface TradeDraft {
   openedAt: string;
   closedAt: string;
   conviction: number;
+  maeR?: number;
+  mfeR?: number;
   tags: string[];
 }
 
@@ -192,6 +194,8 @@ type BrokerConnectionRow = {
   created_at: string;
 };
 
+type TradeReviewMetrics = Record<string, { maeR?: number; mfeR?: number }>;
+
 const TradeStoreContext = createContext<TradeStoreValue | null>(null);
 
 function buildInitials(fullName: string) {
@@ -240,6 +244,19 @@ function setStoredItem<T>(key: string, value: T) {
 
   window.localStorage.setItem(key, JSON.stringify(value));
   notifyStorageChange(key);
+}
+
+function mergeTradeReviewMetrics(trades: Trade[], reviewMetrics: TradeReviewMetrics) {
+  return trades.map((trade) => {
+    const metrics = reviewMetrics[trade.id];
+    return metrics
+      ? {
+          ...trade,
+          maeR: metrics.maeR,
+          mfeR: metrics.mfeR,
+        }
+      : trade;
+  });
 }
 
 function profileFromRow(row: ProfileRow): Profile {
@@ -427,6 +444,9 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
   const [trades, setTrades] = useState<Trade[]>(() =>
     hasSupa ? [] : getStoredItem(STORAGE_KEYS.trades, seedTrades),
   );
+  const [tradeReviewMetrics, setTradeReviewMetrics] = useState<TradeReviewMetrics>(() =>
+    getStoredItem(STORAGE_KEYS.tradeReviewMetrics, {}),
+  );
   const [brokerConnections, setBrokerConnections] = useState<BrokerConnection[]>([]);
 
   const supabase = getSupabaseBrowserClient();
@@ -553,13 +573,16 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
         ),
       );
       setTrades(
-        (tradesResult.data ?? []).map((row) =>
-          tradeFromRow(
-            row as TradeRow,
-            (tradeTagsResult.data ?? []) as TradeTagLinkRow[],
-            nextNotes,
-            nextExecutions,
+        mergeTradeReviewMetrics(
+          (tradesResult.data ?? []).map((row) =>
+            tradeFromRow(
+              row as TradeRow,
+              (tradeTagsResult.data ?? []) as TradeTagLinkRow[],
+              nextNotes,
+              nextExecutions,
+            ),
           ),
+          tradeReviewMetrics,
         ),
       );
     };
@@ -569,7 +592,7 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, [isSupabaseMode, session, supabase]);
+  }, [isSupabaseMode, session, supabase, tradeReviewMetrics]);
 
   const value = useMemo<TradeStoreValue>(
     () => ({
@@ -603,6 +626,8 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
           openedAt: draft.openedAt,
           closedAt: draft.closedAt,
           conviction: draft.conviction,
+          maeR: draft.maeR,
+          mfeR: draft.mfeR,
           tags: draft.tags,
           noteIds: draft.id ? trades.find((trade) => trade.id === draft.id)?.noteIds ?? [] : [],
           executionIds: draft.id
@@ -617,6 +642,17 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
             : [nextTrade, ...trades];
           setTrades(nextTrades);
           setStoredItem(STORAGE_KEYS.trades, nextTrades);
+          setTradeReviewMetrics((current) => {
+            const nextMetrics = {
+              ...current,
+              [nextTrade.id]: {
+                maeR: nextTrade.maeR,
+                mfeR: nextTrade.mfeR,
+              },
+            };
+            setStoredItem(STORAGE_KEYS.tradeReviewMetrics, nextMetrics);
+            return nextMetrics;
+          });
           return nextTrade.id;
         }
 
@@ -656,6 +692,17 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
           return exists
             ? current.map((trade) => (trade.id === nextTrade.id ? nextTrade : trade))
             : [nextTrade, ...current];
+        });
+        setTradeReviewMetrics((current) => {
+          const nextMetrics = {
+            ...current,
+            [nextTrade.id]: {
+              maeR: nextTrade.maeR,
+              mfeR: nextTrade.mfeR,
+            },
+          };
+          setStoredItem(STORAGE_KEYS.tradeReviewMetrics, nextMetrics);
+          return nextMetrics;
         });
         return nextTrade.id;
       },

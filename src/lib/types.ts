@@ -99,6 +99,8 @@ export interface Trade {
   openedAt: string;
   closedAt: string;
   conviction: number;
+  maeR?: number;
+  mfeR?: number;
   tags: string[];
   noteIds: string[];
   executionIds: string[];

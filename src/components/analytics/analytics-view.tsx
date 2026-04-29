@@ -39,6 +39,11 @@ export function AnalyticsView() {
   });
   const totalWeeks = Math.max(...ruleAdherence.map((cell) => cell.weekIndex)) + 1;
   const activeRuleDate = activeRuleCell?.date ?? null;
+  const [hoveredMaeMfeId, setHoveredMaeMfeId] = useState<string | null>(null);
+  const activeMaeMfePoint =
+    hoveredMaeMfeId ? maeMfeSeries.find((point) => point.id === hoveredMaeMfeId) ?? null : null;
+  const maxMae = Math.max(...maeMfeSeries.map((point) => point.mae), 1);
+  const maxMfe = Math.max(...maeMfeSeries.map((point) => point.mfe), 1);
 
   return (
     <div className="space-y-6">
@@ -257,48 +262,108 @@ export function AnalyticsView() {
 
       <Card>
         <p className="text-[11px] uppercase tracking-[0.28em] text-muted">MAE / MFE</p>
-        <h3 className="mt-2 text-2xl font-semibold">Adverse versus favorable excursion</h3>
-        <div className="mt-8 grid gap-4 md:grid-cols-2">
-          {maeMfeSeries.map((point) => (
-            <div
-              key={point.symbol}
-              className="rounded-[24px] border border-border bg-card-soft p-4 transition duration-150 hover:-translate-y-1 hover:border-accent/25"
-            >
-              <div className="flex items-center justify-between gap-4">
-                <p className="font-semibold">{point.symbol}</p>
-                <p className="text-xs text-muted">{point.setup}</p>
+        <h3 className="mt-2 text-2xl font-semibold">Adverse versus favorable excursion scatter</h3>
+        {maeMfeSeries.length > 0 ? (
+          <div className="mt-8 grid gap-6 xl:grid-cols-[1.15fr_0.85fr]">
+            <div className="rounded-[28px] border border-border bg-card-soft/50 p-5">
+              <div className="flex items-center justify-between text-xs uppercase tracking-[0.2em] text-muted">
+                <span>Higher MFE</span>
+                <span>Lower MAE</span>
               </div>
-              <div className="mt-4 space-y-4">
-                <div>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="text-muted">MAE</span>
-                    <span className="font-semibold text-danger">{point.mae.toFixed(2)}R</span>
-                  </div>
-                  <div className="h-3 overflow-hidden rounded-full bg-background/65">
+              <div className="relative mt-4 h-[360px] rounded-[24px] border border-border bg-background/55">
+                <div className="absolute inset-0">
+                  {Array.from({ length: 4 }).map((_, index) => (
                     <div
-                      className="h-full rounded-full bg-danger transition-all duration-150 hover:brightness-110"
-                      style={{ width: `${Math.min(point.mae * 25, 100)}%` }}
-                      title={`${point.symbol} MAE ${point.mae.toFixed(2)}R`}
+                      key={`h-${index}`}
+                      className="absolute left-0 right-0 border-t border-border/60"
+                      style={{ top: `${(index + 1) * 20}%` }}
                     />
-                  </div>
+                  ))}
+                  {Array.from({ length: 4 }).map((_, index) => (
+                    <div
+                      key={`v-${index}`}
+                      className="absolute top-0 bottom-0 border-l border-border/60"
+                      style={{ left: `${(index + 1) * 20}%` }}
+                    />
+                  ))}
                 </div>
-                <div>
-                  <div className="mb-2 flex items-center justify-between text-sm">
-                    <span className="text-muted">MFE</span>
-                    <span className="font-semibold text-success">{point.mfe.toFixed(2)}R</span>
-                  </div>
-                  <div className="h-3 overflow-hidden rounded-full bg-background/65">
-                    <div
-                      className="h-full rounded-full bg-success transition-all duration-150 hover:brightness-110"
-                      style={{ width: `${Math.min(point.mfe * 25, 100)}%` }}
-                      title={`${point.symbol} MFE ${point.mfe.toFixed(2)}R`}
+                {maeMfeSeries.map((point) => (
+                  <button
+                    key={point.id}
+                    type="button"
+                    onMouseEnter={() => setHoveredMaeMfeId(point.id)}
+                    onFocus={() => setHoveredMaeMfeId(point.id)}
+                    className="absolute -translate-x-1/2 -translate-y-1/2 rounded-full focus:outline-none"
+                    style={{
+                      left: `${(point.mae / maxMae) * 100}%`,
+                      bottom: `${(point.mfe / maxMfe) * 100}%`,
+                    }}
+                    aria-label={`${point.symbol}: MAE ${point.mae.toFixed(2)}R, MFE ${point.mfe.toFixed(2)}R`}
+                  >
+                    <span
+                      className={`block size-4 rounded-full border-2 shadow-[0_0_0_4px_rgba(11,19,38,0.45)] transition duration-150 ${
+                        point.outcome === "win"
+                          ? "border-success bg-success"
+                          : point.outcome === "loss"
+                            ? "border-danger bg-danger"
+                            : "border-accent bg-accent"
+                      } ${hoveredMaeMfeId === point.id ? "scale-125" : "scale-100"}`}
                     />
-                  </div>
+                  </button>
+                ))}
+                <div className="pointer-events-none absolute bottom-3 left-4 text-[11px] uppercase tracking-[0.18em] text-muted">
+                  MAE (R)
+                </div>
+                <div className="pointer-events-none absolute left-4 top-4 text-[11px] uppercase tracking-[0.18em] text-muted">
+                  MFE (R)
                 </div>
               </div>
             </div>
-          ))}
-        </div>
+
+            <div className="rounded-[28px] border border-border bg-card-soft/50 p-5">
+              <p className="text-[11px] uppercase tracking-[0.28em] text-muted">Scatter Detail</p>
+              {activeMaeMfePoint ? (
+                <div className="mt-4 space-y-4">
+                  <div>
+                    <p className="text-2xl font-semibold">{activeMaeMfePoint.symbol}</p>
+                    <p className="mt-1 text-sm text-muted">{activeMaeMfePoint.setup || "Manual review entry"}</p>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2">
+                    <div className="rounded-[20px] border border-danger/20 bg-danger-soft p-4">
+                      <p className="text-sm text-danger">MAE</p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">
+                        {activeMaeMfePoint.mae.toFixed(2)}R
+                      </p>
+                    </div>
+                    <div className="rounded-[20px] border border-success/20 bg-success/10 p-4">
+                      <p className="text-sm text-success">MFE</p>
+                      <p className="mt-2 text-2xl font-semibold text-foreground">
+                        {activeMaeMfePoint.mfe.toFixed(2)}R
+                      </p>
+                    </div>
+                  </div>
+                  <div className="rounded-[20px] border border-border bg-background/55 p-4">
+                    <p className="text-sm text-muted">Closed Result</p>
+                    <p className="mt-2 text-2xl font-semibold text-foreground">
+                      {formatCurrency(activeMaeMfePoint.pnl)}
+                    </p>
+                  </div>
+                </div>
+              ) : (
+                <div className="mt-4 rounded-[20px] border border-border bg-background/55 p-4 text-sm text-muted">
+                  Hover a point to inspect the saved manual MAE/MFE review for that trade.
+                </div>
+              )}
+              <div className="mt-6 rounded-[20px] border border-border bg-background/55 p-4 text-sm text-muted">
+                Manual MAE/MFE values are entered in the trade review screen and plotted here in R multiples.
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="mt-8 rounded-[24px] border border-border bg-card-soft p-5 text-sm text-muted">
+            No manual MAE/MFE reviews yet. Open any trade from the report log and enter MAE/MFE in the review form to populate this chart.
+          </div>
+        )}
       </Card>
     </div>
   );

@@ -1,6 +1,7 @@
 export const STORAGE_KEYS = {
   user: "chartlore-user",
   trades: "chartlore-trades",
+  tradeReviewMetrics: "chartlore-trade-review-metrics",
   profile: "chartlore-profile",
   tags: "chartlore-tags",
   accounts: "chartlore-accounts",

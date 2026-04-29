@@ -36,6 +36,8 @@ function TradeFormBody({ initialTrade }: { initialTrade?: Trade }) {
     openedAt: initialTrade ? toInputDate(initialTrade.openedAt) : "2026-04-29T13:30",
     closedAt: initialTrade ? toInputDate(initialTrade.closedAt) : "2026-04-29T14:15",
     conviction: initialTrade?.conviction ?? 3,
+    maeR: initialTrade?.maeR,
+    mfeR: initialTrade?.mfeR,
     tags: initialTrade?.tags ?? [],
   });
   const tradeNotes = store.notes
@@ -64,6 +66,8 @@ function TradeFormBody({ initialTrade }: { initialTrade?: Trade }) {
         openedAt: new Date(draft.openedAt).toISOString(),
         closedAt: new Date(draft.closedAt).toISOString(),
         conviction: draft.conviction,
+        maeR: draft.maeR,
+        mfeR: draft.mfeR,
         tags: draft.tags,
         noteIds: [],
         executionIds: [],
@@ -243,6 +247,34 @@ function TradeFormBody({ initialTrade }: { initialTrade?: Trade }) {
               <FieldLabel>Thesis / Notes</FieldLabel>
               <TextArea rows={5} value={draft.thesis} onChange={(event) => setDraft((current) => ({ ...current, thesis: event.target.value }))} />
             </div>
+            <div className="space-y-2">
+              <FieldLabel>Manual MAE (R)</FieldLabel>
+              <TextInput
+                type="number"
+                step="0.01"
+                value={draft.maeR ?? ""}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    maeR: event.target.value === "" ? undefined : Number(event.target.value),
+                  }))
+                }
+              />
+            </div>
+            <div className="space-y-2">
+              <FieldLabel>Manual MFE (R)</FieldLabel>
+              <TextInput
+                type="number"
+                step="0.01"
+                value={draft.mfeR ?? ""}
+                onChange={(event) =>
+                  setDraft((current) => ({
+                    ...current,
+                    mfeR: event.target.value === "" ? undefined : Number(event.target.value),
+                  }))
+                }
+              />
+            </div>
           </div>
         </Card>
 
@@ -296,6 +328,9 @@ function TradeFormBody({ initialTrade }: { initialTrade?: Trade }) {
             <Card>
               <p className="text-[11px] uppercase tracking-[0.28em] text-muted">Trade Review Notes</p>
               <div className="mt-4 space-y-3">
+                <p className="text-sm text-muted">
+                  Use the MAE/MFE fields in the review form to manually score excursion in R after the trade closes.
+                </p>
                 <TextArea
                   rows={4}
                   placeholder="Add post-trade review notes, lessons, execution observations, or follow-ups."
