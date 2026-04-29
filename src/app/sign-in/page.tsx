@@ -9,9 +9,13 @@ import { useAuth } from "@/components/providers/auth-provider";
 function SignInScreen() {
   const router = useRouter();
   const searchParams = useSearchParams();
-  const { signIn, signUp, session, loading } = useAuth();
+  const { signIn, signUp, signOut, session, loading } = useAuth();
   const verified = searchParams.get("verified") === "1";
-  const initialMode = searchParams.get("mode") === "sign-up" ? "sign-up" : "sign-in";
+  const initialMode = verified
+    ? "sign-in"
+    : searchParams.get("mode") === "sign-up"
+      ? "sign-up"
+      : "sign-in";
   const [mode, setMode] = useState<"sign-in" | "sign-up">(initialMode);
   const [fullName, setFullName] = useState("");
   const [email, setEmail] = useState("");
@@ -19,21 +23,27 @@ function SignInScreen() {
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState("");
   const [notice, setNotice] = useState(
-    verified ? "Email verified. Redirecting you into your fresh dashboard..." : "",
+    verified ? "Email verified. Please sign in with your credentials to continue." : "",
   );
   const [pending, setPending] = useState(false);
 
   useEffect(() => {
-    if (!loading && session) {
+    if (!loading && session && !verified) {
       router.replace("/dashboard?onboarding=account");
     }
-  }, [loading, router, session]);
+  }, [loading, router, session, verified]);
+
+  useEffect(() => {
+    if (!loading && verified && session) {
+      void signOut();
+    }
+  }, [loading, session, signOut, verified]);
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setPending(true);
     setError("");
-    setNotice(verified ? "Email verified. Redirecting you into your fresh dashboard..." : "");
+    setNotice(verified ? "Email verified. Please sign in with your credentials to continue." : "");
 
     if (mode === "sign-up" && password !== confirmPassword) {
       setPending(false);
@@ -70,7 +80,7 @@ function SignInScreen() {
         </h1>
         <p className="mt-3 text-sm leading-7 text-muted">
           {mode === "sign-in"
-            ? "Use your ChartLore credentials to open the workspace. Verified sign-up returns land here and continue automatically."
+            ? "Use your ChartLore credentials to open the workspace. Verified sign-up returns land here so you can confirm your login details."
             : "Create a new account with your own details. Supabase will send a verification email before your new workspace goes live."}
         </p>
 
@@ -93,7 +103,7 @@ function SignInScreen() {
             onClick={() => {
               setMode("sign-up");
               setError("");
-              setNotice(verified ? "Email verified. Redirecting you into your fresh dashboard..." : "");
+              setNotice(verified ? "Email verified. Please sign in with your credentials to continue." : "");
             }}
             className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
               mode === "sign-up" ? "bg-accent text-slate-950" : "text-muted hover:text-foreground"

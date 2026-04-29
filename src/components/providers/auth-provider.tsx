@@ -166,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (supabase) {
           const emailRedirectTo =
             typeof window !== "undefined"
-              ? `${window.location.origin}/sign-in?mode=sign-up&verified=1`
+              ? `${window.location.origin}/sign-in?mode=sign-in&verified=1`
               : undefined;
 
           const { data, error } = await supabase.auth.signUp({
