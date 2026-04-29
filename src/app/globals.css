@@ -1,0 +1,116 @@
+@import "tailwindcss";
+
+:root {
+  --background: #08111f;
+  --foreground: #d7e3ff;
+  --muted: #8a98b8;
+  --muted-foreground: #6d7a97;
+  --card: #101a2d;
+  --card-elevated: #16243d;
+  --card-soft: #0d1729;
+  --border: rgba(142, 165, 214, 0.14);
+  --ring: rgba(99, 161, 255, 0.45);
+  --accent: #71a6ff;
+  --accent-strong: #3f82ff;
+  --accent-soft: rgba(113, 166, 255, 0.12);
+  --success: #50e3a4;
+  --success-soft: rgba(80, 227, 164, 0.12);
+  --danger: #ff847c;
+  --danger-soft: rgba(255, 132, 124, 0.12);
+  --warning: #ffcf66;
+  --sidebar: #060d19;
+  --sidebar-foreground: #92a3c6;
+  --input: rgba(14, 28, 50, 0.95);
+  --shadow-panel: 0 24px 60px rgba(1, 8, 20, 0.38);
+  --radius-sm: 0.65rem;
+  --radius-md: 1rem;
+  --radius-lg: 1.4rem;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-card: var(--card);
+  --color-card-elevated: var(--card-elevated);
+  --color-card-soft: var(--card-soft);
+  --color-border: var(--border);
+  --color-ring: var(--ring);
+  --color-accent: var(--accent);
+  --color-accent-strong: var(--accent-strong);
+  --color-accent-soft: var(--accent-soft);
+  --color-success: var(--success);
+  --color-success-soft: var(--success-soft);
+  --color-danger: var(--danger);
+  --color-danger-soft: var(--danger-soft);
+  --color-warning: var(--warning);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-input: var(--input);
+  --radius-sm: var(--radius-sm);
+  --radius-md: var(--radius-md);
+  --radius-lg: var(--radius-lg);
+  --font-sans: "Geist", "Geist Fallback", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", "Geist Mono Fallback", ui-monospace, monospace;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at top right, rgba(113, 166, 255, 0.16), transparent 28%),
+    radial-gradient(circle at top left, rgba(80, 227, 164, 0.06), transparent 22%),
+    linear-gradient(180deg, #0a1426 0%, #08111f 42%, #07101d 100%);
+  color: var(--foreground);
+  font-family: var(--font-sans);
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+
+::selection {
+  background: rgba(113, 166, 255, 0.32);
+}
+
+.panel {
+  background: linear-gradient(180deg, rgba(18, 30, 51, 0.95) 0%, rgba(11, 20, 36, 0.98) 100%);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-panel);
+}
+
+.grid-glow {
+  background-image:
+    linear-gradient(rgba(124, 151, 201, 0.08) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(124, 151, 201, 0.08) 1px, transparent 1px);
+  background-size: 42px 42px;
+}
+
+.hide-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+.hide-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
+}
+
+.text-balance {
+  text-wrap: balance;
+}
