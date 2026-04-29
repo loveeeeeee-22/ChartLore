@@ -1,28 +1,39 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useEffect, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { AlertCircle, Lock, UserPlus } from "lucide-react";
 import { Button, Card, FieldLabel, TextInput } from "@/components/common/primitives";
 import { useAuth } from "@/components/providers/auth-provider";
 
-export default function SignInPage() {
+function SignInScreen() {
   const router = useRouter();
-  const { signIn, signUp } = useAuth();
-  const [mode, setMode] = useState<"sign-in" | "sign-up">("sign-in");
+  const searchParams = useSearchParams();
+  const { signIn, signUp, session, loading } = useAuth();
+  const verified = searchParams.get("verified") === "1";
+  const initialMode = searchParams.get("mode") === "sign-up" ? "sign-up" : "sign-in";
+  const [mode, setMode] = useState<"sign-in" | "sign-up">(initialMode);
   const [fullName, setFullName] = useState("Alex Rivera");
   const [email, setEmail] = useState("alex@chartlore.app");
   const [password, setPassword] = useState("demo-password");
   const [confirmPassword, setConfirmPassword] = useState("demo-password");
   const [error, setError] = useState("");
-  const [notice, setNotice] = useState("");
+  const [notice, setNotice] = useState(
+    verified ? "Email verified. Redirecting you into your fresh dashboard..." : "",
+  );
   const [pending, setPending] = useState(false);
+
+  useEffect(() => {
+    if (!loading && session) {
+      router.replace("/dashboard?onboarding=account");
+    }
+  }, [loading, router, session]);
 
   const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
     setPending(true);
     setError("");
-    setNotice("");
+    setNotice(verified ? "Email verified. Redirecting you into your fresh dashboard..." : "");
 
     if (mode === "sign-up" && password !== confirmPassword) {
       setPending(false);
@@ -43,11 +54,11 @@ export default function SignInPage() {
     }
 
     if ("requiresConfirmation" in result && result.requiresConfirmation) {
-      setNotice("Account created. Check your email to confirm your account before signing in.");
+      setNotice("Account created. Check your email to verify your account before signing in.");
       return;
     }
 
-    router.push("/dashboard");
+    router.push("/dashboard?onboarding=account");
   };
 
   return (
@@ -59,8 +70,8 @@ export default function SignInPage() {
         </h1>
         <p className="mt-3 text-sm leading-7 text-muted">
           {mode === "sign-in"
-            ? "If Supabase environment variables are not present, this screen falls back to a local demo session so the full product can still be explored end to end."
-            : "Create a new account with your own details. When Supabase email confirmation is enabled, you'll be prompted to verify your email before signing in."}
+            ? "Use your ChartLore credentials to open the workspace. Verified sign-up returns land here and continue automatically."
+            : "Create a new account with your own details. Supabase will send a verification email before your new workspace goes live."}
         </p>
 
         <div className="mt-6 grid grid-cols-2 gap-2 rounded-full border border-border bg-card-soft p-1">
@@ -82,7 +93,7 @@ export default function SignInPage() {
             onClick={() => {
               setMode("sign-up");
               setError("");
-              setNotice("");
+              setNotice(verified ? "Email verified. Redirecting you into your fresh dashboard..." : "");
             }}
             className={`rounded-full px-4 py-2 text-sm font-semibold transition ${
               mode === "sign-up" ? "bg-accent text-slate-950" : "text-muted hover:text-foreground"
@@ -140,7 +151,11 @@ export default function SignInPage() {
           ) : null}
 
           <Button type="submit" className="w-full py-3" disabled={pending}>
-            {mode === "sign-in" ? <Lock className="mr-2 size-4" /> : <UserPlus className="mr-2 size-4" />}
+            {mode === "sign-in" ? (
+              <Lock className="mr-2 size-4" />
+            ) : (
+              <UserPlus className="mr-2 size-4" />
+            )}
             {pending
               ? mode === "sign-in"
                 ? "Signing In..."
@@ -152,5 +167,13 @@ export default function SignInPage() {
         </form>
       </Card>
     </div>
+  );
+}
+
+export default function SignInPage() {
+  return (
+    <Suspense fallback={<div className="min-h-screen bg-background" />}>
+      <SignInScreen />
+    </Suspense>
   );
 }

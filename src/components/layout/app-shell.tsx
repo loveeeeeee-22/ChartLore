@@ -81,16 +81,32 @@ export function AppShell({ children }: { children: ReactNode }) {
           )}
         >
           <p className="text-[10px] uppercase tracking-[0.3em] text-muted">Primary Account</p>
-          <div className="space-y-1">
-            <p className="text-base font-semibold">{primaryAccount.name}</p>
-            <p className="text-sm text-muted">{primaryAccount.broker}</p>
-          </div>
-          <p className="font-mono text-xl text-success">
-            {new Intl.NumberFormat("en-US", {
-              style: "currency",
-              currency: primaryAccount.currency,
-            }).format(primaryAccount.balance)}
-          </p>
+          {primaryAccount ? (
+            <>
+              <div className="space-y-1">
+                <p className="text-base font-semibold">{primaryAccount.name}</p>
+                <p className="text-sm text-muted">{primaryAccount.broker}</p>
+              </div>
+              <p className="font-mono text-xl text-success">
+                {new Intl.NumberFormat("en-US", {
+                  style: "currency",
+                  currency: primaryAccount.currency,
+                }).format(primaryAccount.balance)}
+              </p>
+            </>
+          ) : (
+            <div className="space-y-3">
+              <p className="text-sm leading-6 text-muted">
+                No trading account linked yet. Create one to unlock live journaling.
+              </p>
+              <Link
+                href="/settings#create-account"
+                className="inline-flex items-center justify-center rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-accent-strong"
+              >
+                Create Account
+              </Link>
+            </div>
+          )}
         </div>
       </aside>
 

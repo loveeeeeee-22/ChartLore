@@ -1,14 +1,8 @@
 "use client";
 
-import {
-  createContext,
-  type ReactNode,
-  useContext,
-  useMemo,
-  useSyncExternalStore,
-} from "react";
+import { createContext, type ReactNode, useContext, useEffect, useMemo, useState } from "react";
 import type { UserSession } from "@/lib/types";
-import { notifyStorageChange, STORAGE_EVENT, STORAGE_KEYS } from "@/lib/storage";
+import { notifyStorageChange, STORAGE_KEYS } from "@/lib/storage";
 import { getSupabaseBrowserClient } from "@/lib/supabase";
 
 interface AuthContextValue {
@@ -25,8 +19,13 @@ interface AuthContextValue {
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
-let cachedUserRaw: null | string = null;
-let cachedUserValue: UserSession | null = null;
+function buildSession(id: string, email: string, fullName?: string | null): UserSession {
+  return {
+    id,
+    email,
+    fullName: fullName?.trim() || email.split("@")[0]?.replace(/\./g, " ") || "ChartLore Trader",
+  };
+}
 
 function readStoredUser() {
   if (typeof window === "undefined") {
@@ -34,85 +33,147 @@ function readStoredUser() {
   }
 
   const raw = window.localStorage.getItem(STORAGE_KEYS.user);
-  if (raw === cachedUserRaw) {
-    return cachedUserValue;
+  return raw ? (JSON.parse(raw) as UserSession) : null;
+}
+
+function storeSession(nextSession: UserSession | null) {
+  if (typeof window === "undefined") {
+    return;
   }
 
-  cachedUserRaw = raw;
-  cachedUserValue = raw ? (JSON.parse(raw) as UserSession) : null;
-  return cachedUserValue;
+  if (nextSession) {
+    window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(nextSession));
+  } else {
+    window.localStorage.removeItem(STORAGE_KEYS.user);
+  }
+
+  notifyStorageChange(STORAGE_KEYS.user);
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const session = useSyncExternalStore(
-    (callback) => {
-      if (typeof window === "undefined") {
-        return () => undefined;
+  const supabase = getSupabaseBrowserClient();
+  const [session, setSession] = useState<UserSession | null>(() => readStoredUser());
+  const [loading, setLoading] = useState(Boolean(supabase));
+
+  useEffect(() => {
+    if (!supabase) {
+      return;
+    }
+
+    let mounted = true;
+
+    const syncSession = async () => {
+      const { data, error } = await supabase.auth.getSession();
+
+      if (!mounted) {
+        return;
       }
 
-      const handler = () => callback();
-      const customHandler = (event: Event) => {
-        const detail = (event as CustomEvent<{ key?: string }>).detail;
-        if (!detail?.key || detail.key === STORAGE_KEYS.user) {
-          callback();
-        }
-      };
+      if (error) {
+        console.error("Failed to load auth session", error);
+        setLoading(false);
+        return;
+      }
 
-      window.addEventListener("storage", handler);
-      window.addEventListener(STORAGE_EVENT, customHandler);
-      return () => {
-        window.removeEventListener("storage", handler);
-        window.removeEventListener(STORAGE_EVENT, customHandler);
-      };
-    },
-    readStoredUser,
-    () => null,
-  );
+      if (data.session?.user) {
+        const user = data.session.user;
+        const nextSession = buildSession(
+          user.id,
+          user.email ?? "",
+          user.user_metadata.full_name ?? user.user_metadata.fullName,
+        );
+        setSession(nextSession);
+        storeSession(nextSession);
+      } else {
+        setSession(readStoredUser());
+      }
+
+      setLoading(false);
+    };
+
+    void syncSession();
+
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, nextAuthSession) => {
+      if (!mounted) {
+        return;
+      }
+
+      if (nextAuthSession?.user) {
+        const user = nextAuthSession.user;
+        const nextSession = buildSession(
+          user.id,
+          user.email ?? "",
+          user.user_metadata.full_name ?? user.user_metadata.fullName,
+        );
+        setSession(nextSession);
+        storeSession(nextSession);
+      } else {
+        setSession(null);
+        storeSession(null);
+      }
+
+      setLoading(false);
+    });
+
+    return () => {
+      mounted = false;
+      listener.subscription.unsubscribe();
+    };
+  }, [supabase]);
 
   const value = useMemo<AuthContextValue>(
     () => ({
       session,
-      loading: false,
-      async signIn(email, _password) {
+      loading,
+      async signIn(email, password) {
         const supabase = getSupabaseBrowserClient();
 
         if (supabase) {
           const { data, error } = await supabase.auth.signInWithPassword({
             email,
-            password: _password,
+            password,
           });
 
           if (error) {
             return { error: error.message };
           }
 
-          const nextSession = {
-            id: data.user.id,
-            email: data.user.email ?? email,
-            fullName: data.user.user_metadata.full_name ?? "ChartLore Trader",
-          };
-          window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(nextSession));
-          notifyStorageChange(STORAGE_KEYS.user);
+          if (data.user) {
+            const nextSession = buildSession(
+              data.user.id,
+              data.user.email ?? email,
+              data.user.user_metadata.full_name ?? data.user.user_metadata.fullName,
+            );
+            setSession(nextSession);
+            storeSession(nextSession);
+          }
+
           return {};
         }
 
-        const fallbackSession = {
-          id: "demo-user",
+        const fallbackSession = buildSession(
+          "demo-user",
           email,
-          fullName: email.split("@")[0]?.replace(/\./g, " ") || "ChartLore Trader",
-        };
-        window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(fallbackSession));
-        notifyStorageChange(STORAGE_KEYS.user);
+          email.split("@")[0]?.replace(/\./g, " "),
+        );
+        setSession(fallbackSession);
+        storeSession(fallbackSession);
         return {};
       },
       async signUp(email, password, fullName) {
         const supabase = getSupabaseBrowserClient();
 
         if (supabase) {
+          const emailRedirectTo =
+            typeof window !== "undefined"
+              ? `${window.location.origin}/sign-in?mode=sign-up&verified=1`
+              : undefined;
+
           const { data, error } = await supabase.auth.signUp({
             email,
             password,
             options: {
+              emailRedirectTo,
               data: {
                 full_name: fullName,
               },
@@ -127,23 +188,19 @@ export function AuthProvider({ children }: { children: ReactNode }) {
             return { requiresConfirmation: true };
           }
 
-          const nextSession = {
-            id: data.user.id,
-            email: data.user.email ?? email,
-            fullName: data.user.user_metadata.full_name ?? fullName,
-          };
-          window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(nextSession));
-          notifyStorageChange(STORAGE_KEYS.user);
+          const nextSession = buildSession(
+            data.user.id,
+            data.user.email ?? email,
+            data.user.user_metadata.full_name ?? fullName,
+          );
+          setSession(nextSession);
+          storeSession(nextSession);
           return {};
         }
 
-        const fallbackSession = {
-          id: "demo-user",
-          email,
-          fullName: fullName.trim() || email.split("@")[0]?.replace(/\./g, " ") || "ChartLore Trader",
-        };
-        window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(fallbackSession));
-        notifyStorageChange(STORAGE_KEYS.user);
+        const fallbackSession = buildSession("demo-user", email, fullName);
+        setSession(fallbackSession);
+        storeSession(fallbackSession);
         return {};
       },
       async signOut() {
@@ -151,11 +208,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (supabase) {
           await supabase.auth.signOut();
         }
-        window.localStorage.removeItem(STORAGE_KEYS.user);
-        notifyStorageChange(STORAGE_KEYS.user);
+        setSession(null);
+        storeSession(null);
       },
     }),
-    [session],
+    [loading, session],
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

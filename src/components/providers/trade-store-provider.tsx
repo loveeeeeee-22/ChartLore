@@ -398,26 +398,10 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
         }
       }
 
-      const [accountsSeedCheck, strategiesSeedCheck, tagsSeedCheck] = await Promise.all([
-        supabase.from("accounts").select("id").eq("user_id", userId).limit(1),
+      const [strategiesSeedCheck, tagsSeedCheck] = await Promise.all([
         supabase.from("strategies").select("id").eq("user_id", userId).limit(1),
         supabase.from("tags").select("id").eq("user_id", userId).limit(1),
       ]);
-
-      if (!accountsSeedCheck.error && (accountsSeedCheck.data?.length ?? 0) === 0) {
-        const seededAccounts = seedAccounts.map((account) => ({
-          user_id: userId,
-          name: account.name,
-          broker: account.broker,
-          balance: account.balance,
-          currency: account.currency,
-          type: account.type,
-        }));
-        const accountInsert = await supabase.from("accounts").insert(seededAccounts);
-        if (accountInsert.error) {
-          console.error("Failed to seed accounts", accountInsert.error);
-        }
-      }
 
       if (!strategiesSeedCheck.error && (strategiesSeedCheck.data?.length ?? 0) === 0) {
         const seededStrategies = seedStrategies.map((strategy) => ({

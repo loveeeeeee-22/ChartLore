@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import { ArrowRight, CircleDollarSign, Target, TrendingDown, TrendingUp } from "lucide-react";
 import { Badge, Card } from "@/components/common/primitives";
 import { FilterBar, useFilters } from "@/components/common/filter-bar";
@@ -23,6 +24,7 @@ import { cn } from "@/lib/utils";
 
 export function DashboardView() {
   const store = useTradeStore();
+  const searchParams = useSearchParams();
   const filters = useFilters();
   const filteredTrades = filterTrades(store.trades, filters);
   const metrics = getDashboardMetrics(filteredTrades, store.dailySnapshots);
@@ -43,6 +45,8 @@ export function DashboardView() {
     }))
     .filter((tag) => tag.total > 0)
     .sort((a, b) => b.total - a.total)[0];
+  const shouldPromptAccountSetup =
+    store.accounts.length === 0 || searchParams.get("onboarding") === "account";
 
   const metricCards = [
     {
@@ -104,6 +108,35 @@ export function DashboardView() {
         strategies={store.strategies}
         tags={store.tags}
       />
+
+      {shouldPromptAccountSetup ? (
+        <Card className="border-accent/25 bg-accent-soft/30">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-center lg:justify-between">
+            <div>
+              <p className="text-[11px] uppercase tracking-[0.28em] text-accent">New Workspace</p>
+              <h3 className="mt-2 text-2xl font-semibold">Create or link your first trading account</h3>
+              <p className="mt-3 max-w-3xl text-sm leading-7 text-muted">
+                Your ChartLore account is ready. Add a journal account or jump to broker linking so
+                trades, reports, and analytics can start filling with your own data.
+              </p>
+            </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Link
+                href="/settings#create-account"
+                className="inline-flex items-center justify-center rounded-full bg-accent px-4 py-2.5 text-sm font-semibold text-slate-950 transition hover:bg-accent-strong"
+              >
+                Create Account
+              </Link>
+              <Link
+                href="/settings#broker-roadmap"
+                className="inline-flex items-center justify-center rounded-full border border-border bg-card-soft px-4 py-2.5 text-sm font-semibold text-foreground transition hover:border-accent/25"
+              >
+                Link Broker
+              </Link>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-4">
         {metricCards.map((card) => (
