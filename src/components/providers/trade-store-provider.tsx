@@ -76,6 +76,7 @@ interface TradeStoreValue {
   addAccount: (draft: AccountDraft) => Promise<Account | undefined>;
   addStrategy: (draft: StrategyDraft) => Promise<Strategy | undefined>;
   updateStrategyStatus: (strategyId: string, status: Strategy["status"]) => Promise<void>;
+  removeStrategy: (strategyId: string) => Promise<void>;
   removeAccount: (accountId: string) => Promise<void>;
   removeTag: (tagId: string) => Promise<void>;
   addBrokerConnection: (
@@ -581,8 +582,10 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
       dailySnapshots,
       trades,
       async saveTrade(draft) {
+        const nextTradeId =
+          draft.id ?? (isSupabaseMode ? crypto.randomUUID() : `trade-${Date.now()}`);
         const nextTrade: Trade = {
-          id: draft.id ?? `trade-${Date.now()}`,
+          id: nextTradeId,
           userId: safeProfile.id,
           accountId: draft.accountId,
           strategyId: draft.strategyId,
@@ -826,6 +829,59 @@ export function TradeStoreProvider({ children }: { children: ReactNode }) {
 
         setStrategies((current) =>
           current.map((strategy) => (strategy.id === strategyId ? { ...strategy, status } : strategy)),
+        );
+      },
+      async removeStrategy(strategyId) {
+        const tradeIds = trades
+          .filter((trade) => trade.strategyId === strategyId)
+          .map((trade) => trade.id);
+
+        if (!isSupabaseMode || !supabase || !session) {
+          setStrategies((current) => current.filter((strategy) => strategy.id !== strategyId));
+          setTrades((current) => current.filter((trade) => trade.strategyId !== strategyId));
+          setNotes((current) => current.filter((note) => !tradeIds.includes(note.tradeId)));
+          setExecutions((current) =>
+            current.filter((execution) => !tradeIds.includes(execution.tradeId)),
+          );
+          return;
+        }
+
+        if (tradeIds.length > 0) {
+          const deleteTradeTags = await supabase
+            .from("trade_tags")
+            .delete()
+            .eq("user_id", session.id)
+            .in("trade_id", tradeIds);
+          if (deleteTradeTags.error) {
+            console.error("Failed to delete trade tags for strategy", deleteTradeTags.error);
+          }
+
+          const deleteTrades = await supabase
+            .from("trades")
+            .delete()
+            .eq("user_id", session.id)
+            .eq("strategy_id", strategyId);
+          if (deleteTrades.error) {
+            console.error("Failed to delete trades for strategy", deleteTrades.error);
+            return;
+          }
+        }
+
+        const deleteStrategy = await supabase
+          .from("strategies")
+          .delete()
+          .eq("user_id", session.id)
+          .eq("id", strategyId);
+        if (deleteStrategy.error) {
+          console.error("Failed to delete strategy", deleteStrategy.error);
+          return;
+        }
+
+        setStrategies((current) => current.filter((strategy) => strategy.id !== strategyId));
+        setTrades((current) => current.filter((trade) => trade.strategyId !== strategyId));
+        setNotes((current) => current.filter((note) => !tradeIds.includes(note.tradeId)));
+        setExecutions((current) =>
+          current.filter((execution) => !tradeIds.includes(execution.tradeId)),
         );
       },
       async removeAccount(accountId) {

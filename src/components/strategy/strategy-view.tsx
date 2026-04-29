@@ -2,9 +2,8 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowRight } from "lucide-react";
+import { ArrowRight, Trash2 } from "lucide-react";
 import {
-  Badge,
   Button,
   Card,
   FieldLabel,
@@ -139,9 +138,12 @@ export function StrategyView() {
                       <p className="mt-1 text-xs text-muted">{strategy.playbook}</p>
                     </div>
                     <div className="flex items-center gap-3">
-                      <Badge tone={strategy.status === "active" ? "success" : "warning"}>
-                        {strategy.status === "active" ? "In Play" : "Being Revised"}
-                      </Badge>
+                      <span
+                        className={`inline-flex size-3 rounded-full ${
+                          strategy.status === "active" ? "bg-success" : "bg-warning"
+                        }`}
+                        aria-hidden="true"
+                      />
                       <Select
                         value={strategy.status === "active" ? "active" : "revising"}
                         onChange={(event) =>
@@ -155,6 +157,14 @@ export function StrategyView() {
                         <option value="active">In Play</option>
                         <option value="revising">Being Revised</option>
                       </Select>
+                      <button
+                        type="button"
+                        onClick={() => void store.removeStrategy(strategy.id)}
+                        className="inline-flex size-10 items-center justify-center rounded-full border border-danger/25 bg-danger-soft text-danger transition hover:border-danger/40"
+                        aria-label={`Delete ${strategy.name}`}
+                      >
+                        <Trash2 className="size-4" />
+                      </button>
                     </div>
                   </div>
                 </div>
