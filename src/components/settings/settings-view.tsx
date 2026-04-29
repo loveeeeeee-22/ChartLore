@@ -13,6 +13,7 @@ import {
 } from "@/components/common/primitives";
 import { PageHeader } from "@/components/common/page-header";
 import { type AccountDraft, useTradeStore } from "@/components/providers/trade-store-provider";
+import { parseMT5Report, type ParsedTrade } from "@/lib/mt5-parser";
 import type { BrokerConnection } from "@/lib/types";
 
 type BrokerDraft = {
@@ -68,6 +69,30 @@ function toIsoDate(value: string) {
   return Number.isNaN(parsed.getTime()) ? new Date().toISOString() : parsed.toISOString();
 }
 
+function deriveMarket(symbol: string) {
+  const normalized = symbol.toUpperCase();
+  if (normalized.includes("XAU") || normalized.includes("GOLD")) {
+    return "Commodities";
+  }
+  if (normalized.includes("BTC") || normalized.includes("ETH")) {
+    return "Crypto";
+  }
+  return "Forex";
+}
+
+function readFileAsText(file: File, encoding?: string) {
+  return new Promise<string>((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error("Unable to read import file."));
+    reader.onload = () => resolve(String(reader.result ?? ""));
+    if (encoding) {
+      reader.readAsText(file, encoding);
+      return;
+    }
+    reader.readAsText(file);
+  });
+}
+
 function toBrokerTone(status: BrokerConnection["status"]) {
   switch (status) {
     case "active":
@@ -115,6 +140,8 @@ export function SettingsView() {
   const [brokerError, setBrokerError] = useState("");
   const [syncingId, setSyncingId] = useState<string | null>(null);
   const [connecting, setConnecting] = useState(false);
+  const [parsedMt5Trades, setParsedMt5Trades] = useState<ParsedTrade[]>([]);
+  const [mt5Preview, setMt5Preview] = useState("");
 
   const handleSaveProfile = async () => {
     const fullName = draftProfile.fullName ?? profile.fullName;
@@ -233,6 +260,77 @@ export function SettingsView() {
     return imported;
   };
 
+  const importMt5Trades = async (parsedTrades: ParsedTrade[]) => {
+    if (!accounts[0]?.id || !strategies[0]?.id) {
+      throw new Error("Create at least one ChartLore account before importing MT5 trades.");
+    }
+
+    if (!parsedTrades.length) {
+      throw new Error("No MT5 trades were available to import.");
+    }
+
+    let imported = 0;
+
+    for (const trade of parsedTrades) {
+      await saveTrade({
+        accountId: accounts[0].id,
+        strategyId: strategies[0].id,
+        symbol: trade.symbol,
+        market: deriveMarket(trade.symbol),
+        side: trade.side,
+        quantity: trade.volume,
+        entryPrice: trade.entryPrice,
+        exitPrice: trade.exitPrice,
+        stopPrice: trade.stopPrice,
+        fees: trade.commission + trade.swap,
+        setup: trade.setup,
+        thesis: "",
+        openedAt: trade.openedAt,
+        closedAt: trade.closedAt,
+        conviction: 3,
+        tags: [],
+      });
+      imported += 1;
+    }
+
+    return imported;
+  };
+
+  const handleImportFileChange = async (file: File | null) => {
+    setBrokerError("");
+    setBrokerNotice("");
+    setMt5Preview("");
+    setParsedMt5Trades([]);
+    setBrokerDraft((current) => ({ ...current, csvFile: file }));
+
+    if (!file) {
+      return;
+    }
+
+    const lowerName = file.name.toLowerCase();
+    if (lowerName.endsWith(".html") || lowerName.endsWith(".htm")) {
+      try {
+        const text = await readFileAsText(file, "UTF-16");
+        const parsedTrades = parseMT5Report(text);
+
+        if (!parsedTrades.length) {
+          throw new Error("No valid MT5 trades were found in that HTML report.");
+        }
+
+        const firstDate = new Date(parsedTrades[0].openedAt).toLocaleDateString();
+        const lastDate = new Date(parsedTrades[parsedTrades.length - 1].closedAt).toLocaleDateString();
+
+        setParsedMt5Trades(parsedTrades);
+        setMt5Preview(`Found ${parsedTrades.length} trades from ${firstDate} to ${lastDate}`);
+      } catch (error) {
+        setBrokerDraft((current) => ({ ...current, csvFile: null }));
+        setBrokerError(
+          error instanceof Error ? error.message : "Unable to parse that MT5 HTML report.",
+        );
+      }
+    }
+  };
+
   const handleConnectBroker = async () => {
     setConnecting(true);
     setBrokerError("");
@@ -242,7 +340,7 @@ export function SettingsView() {
       const label = brokerDraft.label.trim() || `${brokerDraft.broker.toUpperCase()} Connection`;
 
       if (brokerDraft.broker === "csv" && !brokerDraft.csvFile) {
-        throw new Error("Choose a CSV file before connecting.");
+        throw new Error("Choose an MT5 HTML or CSV file before connecting.");
       }
 
       if (brokerDraft.broker === "alpaca" && (!brokerDraft.apiKey.trim() || !brokerDraft.apiSecret.trim())) {
@@ -268,8 +366,13 @@ export function SettingsView() {
       }
 
       if (brokerDraft.broker === "csv" && brokerDraft.csvFile) {
-        const imported = await importCsvTrades(brokerDraft.csvFile);
-        setBrokerNotice(`CSV broker linked. Imported ${imported} trade${imported === 1 ? "" : "s"}.`);
+        const lowerName = brokerDraft.csvFile.name.toLowerCase();
+        const imported =
+          lowerName.endsWith(".html") || lowerName.endsWith(".htm")
+            ? await importMt5Trades(parsedMt5Trades)
+            : await importCsvTrades(brokerDraft.csvFile);
+
+        setBrokerNotice(`${imported} trades imported successfully`);
       } else {
         setBrokerNotice(`${label} connected successfully.`);
       }
@@ -283,6 +386,8 @@ export function SettingsView() {
         accountId: "",
         csvFile: null,
       });
+      setParsedMt5Trades([]);
+      setMt5Preview("");
     } catch (error) {
       setBrokerError(error instanceof Error ? error.message : "Broker connection failed.");
     } finally {
@@ -358,7 +463,7 @@ export function SettingsView() {
               >
                 <option value="alpaca">Alpaca</option>
                 <option value="oanda">OANDA</option>
-                <option value="csv">CSV Import</option>
+                <option value="csv">MT5 / CSV Import</option>
                 <option value="manual">Manual</option>
               </Select>
             </div>
@@ -422,22 +527,20 @@ export function SettingsView() {
 
             {brokerDraft.broker === "csv" ? (
               <div className="space-y-2 md:col-span-2">
-                <FieldLabel>CSV File</FieldLabel>
+                <FieldLabel>MT5 / CSV File</FieldLabel>
                 <label className="flex cursor-pointer items-center gap-3 rounded-[22px] border border-border bg-card-soft px-4 py-3 text-sm text-muted transition hover:border-accent/25">
                   <Upload className="size-4" />
-                  <span>{brokerDraft.csvFile?.name ?? "Choose a .csv file"}</span>
+                  <span>{brokerDraft.csvFile?.name ?? "Choose an MT5 .html/.htm or .csv file"}</span>
                   <input
                     type="file"
-                    accept=".csv,text/csv"
+                    accept=".html,.htm,.csv,text/csv"
                     className="hidden"
-                    onChange={(event) =>
-                      setBrokerDraft((current) => ({
-                        ...current,
-                        csvFile: event.target.files?.[0] ?? null,
-                      }))
-                    }
+                    onChange={(event) => void handleImportFileChange(event.target.files?.[0] ?? null)}
                   />
                 </label>
+                {mt5Preview ? (
+                  <p className="text-sm text-success">{mt5Preview}</p>
+                ) : null}
               </div>
             ) : null}
           </div>
