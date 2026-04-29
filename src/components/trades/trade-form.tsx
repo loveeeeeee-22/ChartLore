@@ -16,6 +16,7 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
   const router = useRouter();
   const store = useTradeStore();
   const [newTagLabel, setNewTagLabel] = useState("");
+  const [pending, setPending] = useState(false);
   const [draft, setDraft] = useState<TradeDraft>({
     id: initialTrade?.id,
     accountId: initialTrade?.accountId ?? store.accounts[0]?.id ?? "",
@@ -35,14 +36,16 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
     conviction: initialTrade?.conviction ?? 3,
     tags: initialTrade?.tags ?? [],
   });
+  const resolvedAccountId = draft.accountId || store.accounts[0]?.id || "";
+  const resolvedStrategyId = draft.strategyId || store.strategies[0]?.id || "";
 
   const previewTrade = useMemo(
     () =>
       ({
         id: draft.id ?? "preview",
         userId: "preview",
-        accountId: draft.accountId,
-        strategyId: draft.strategyId,
+        accountId: resolvedAccountId,
+        strategyId: resolvedStrategyId,
         symbol: draft.symbol || "NQ1!",
         market: draft.market || "Preview Market",
         side: draft.side,
@@ -60,19 +63,23 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
         noteIds: [],
         executionIds: [],
       }) satisfies Trade,
-    [draft],
+    [draft, resolvedAccountId, resolvedStrategyId],
   );
 
   const pnl = calculateTradePnl(previewTrade);
   const rMultiple = calculateRMultiple(previewTrade);
 
-  const onSubmit = (event: React.FormEvent<HTMLFormElement>) => {
+  const onSubmit = async (event: React.FormEvent<HTMLFormElement>) => {
     event.preventDefault();
-    const tradeId = store.saveTrade({
+    setPending(true);
+    const tradeId = await store.saveTrade({
       ...draft,
+      accountId: resolvedAccountId,
+      strategyId: resolvedStrategyId,
       openedAt: new Date(draft.openedAt).toISOString(),
       closedAt: new Date(draft.closedAt).toISOString(),
     });
+    setPending(false);
     router.push(`/reports?focus=${tradeId}`);
   };
 
@@ -85,14 +92,13 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
     }));
   };
 
-  const handleCreateTag = () => {
+  const handleCreateTag = async () => {
     const nextLabel = newTagLabel.trim();
     if (!nextLabel) {
       return;
     }
 
-    store.addTag(nextLabel);
-    const createdTag = store.tags.find((tag) => tag.label.toLowerCase() === nextLabel.toLowerCase());
+    const createdTag = await store.addTag(nextLabel);
     if (createdTag && !draft.tags.includes(createdTag.id)) {
       setDraft((current) => ({ ...current, tags: [...current.tags, createdTag.id] }));
     }
@@ -107,7 +113,7 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
             <div className="space-y-2">
               <FieldLabel>Account</FieldLabel>
               <Select
-                value={draft.accountId}
+                value={resolvedAccountId}
                 onChange={(event) => setDraft((current) => ({ ...current, accountId: event.target.value }))}
               >
                 {store.accounts.map((account) => (
@@ -120,7 +126,7 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
             <div className="space-y-2">
               <FieldLabel>Strategy</FieldLabel>
               <Select
-                value={draft.strategyId}
+                value={resolvedStrategyId}
                 onChange={(event) => setDraft((current) => ({ ...current, strategyId: event.target.value }))}
               >
                 {store.strategies.map((strategy) => (
@@ -256,7 +262,7 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => store.removeTag(tag.id)}
+                    onClick={() => void store.removeTag(tag.id)}
                     className="inline-flex items-center justify-center rounded-full border border-border bg-card-soft p-1 text-muted transition hover:text-danger"
                     aria-label={`Delete ${tag.label}`}
                   >
@@ -271,7 +277,9 @@ export function TradeForm({ initialTrade }: { initialTrade?: Trade }) {
             <Button type="button" variant="secondary" onClick={() => router.back()}>
               Cancel
             </Button>
-            <Button type="submit">{initialTrade ? "Update Trade" : "Save Trade"}</Button>
+            <Button type="submit" disabled={pending}>
+              {pending ? "Saving..." : initialTrade ? "Update Trade" : "Save Trade"}
+            </Button>
           </div>
         </div>
       </div>

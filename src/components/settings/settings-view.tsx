@@ -8,13 +8,7 @@ import { type AccountDraft, useTradeStore } from "@/components/providers/trade-s
 
 export function SettingsView() {
   const { profile, accounts, updateProfile, addAccount, removeAccount } = useTradeStore();
-  const [fullName, setFullName] = useState(profile.fullName);
-  const [email, setEmail] = useState(profile.email);
-  const [country, setCountry] = useState(profile.country);
-  const [phone, setPhone] = useState(profile.phone);
-  const [city, setCity] = useState(profile.city);
-  const [timezone, setTimezone] = useState(profile.timezone);
-  const [focus, setFocus] = useState(profile.focus);
+  const [draftProfile, setDraftProfile] = useState<Partial<typeof profile>>({});
   const [newAccount, setNewAccount] = useState<AccountDraft>({
     name: "",
     broker: "",
@@ -23,16 +17,17 @@ export function SettingsView() {
     currency: "USD",
   });
 
-  const handleSaveProfile = () => {
-    updateProfile({
+  const handleSaveProfile = async () => {
+    const fullName = draftProfile.fullName ?? profile.fullName;
+    await updateProfile({
       ...profile,
       fullName,
-      email,
-      country,
-      phone,
-      city,
-      timezone,
-      focus,
+      email: draftProfile.email ?? profile.email,
+      country: draftProfile.country ?? profile.country,
+      phone: draftProfile.phone ?? profile.phone,
+      city: draftProfile.city ?? profile.city,
+      timezone: draftProfile.timezone ?? profile.timezone,
+      focus: draftProfile.focus ?? profile.focus,
       initials: fullName
         .split(" ")
         .map((part) => part[0] ?? "")
@@ -40,14 +35,15 @@ export function SettingsView() {
         .slice(0, 2)
         .toUpperCase(),
     });
+    setDraftProfile({});
   };
 
-  const handleCreateAccount = () => {
+  const handleCreateAccount = async () => {
     if (!newAccount.name.trim() || !newAccount.broker.trim()) {
       return;
     }
 
-    addAccount(newAccount);
+    await addAccount(newAccount);
     setNewAccount({
       name: "",
       broker: "",
@@ -94,31 +90,67 @@ export function SettingsView() {
           <div className="mt-6 grid gap-4 md:grid-cols-2">
             <div className="space-y-2">
               <FieldLabel>Full Name</FieldLabel>
-              <TextInput value={fullName} onChange={(event) => setFullName(event.target.value)} />
+              <TextInput
+                value={draftProfile.fullName ?? profile.fullName}
+                onChange={(event) =>
+                  setDraftProfile((current) => ({ ...current, fullName: event.target.value }))
+                }
+              />
             </div>
             <div className="space-y-2">
               <FieldLabel>Email</FieldLabel>
-              <TextInput value={email} onChange={(event) => setEmail(event.target.value)} />
+              <TextInput
+                value={draftProfile.email ?? profile.email}
+                onChange={(event) =>
+                  setDraftProfile((current) => ({ ...current, email: event.target.value }))
+                }
+              />
             </div>
             <div className="space-y-2">
               <FieldLabel>Country</FieldLabel>
-              <TextInput value={country} onChange={(event) => setCountry(event.target.value)} />
+              <TextInput
+                value={draftProfile.country ?? profile.country}
+                onChange={(event) =>
+                  setDraftProfile((current) => ({ ...current, country: event.target.value }))
+                }
+              />
             </div>
             <div className="space-y-2">
               <FieldLabel>Phone Number</FieldLabel>
-              <TextInput value={phone} onChange={(event) => setPhone(event.target.value)} />
+              <TextInput
+                value={draftProfile.phone ?? profile.phone}
+                onChange={(event) =>
+                  setDraftProfile((current) => ({ ...current, phone: event.target.value }))
+                }
+              />
             </div>
             <div className="space-y-2">
               <FieldLabel>City</FieldLabel>
-              <TextInput value={city} onChange={(event) => setCity(event.target.value)} />
+              <TextInput
+                value={draftProfile.city ?? profile.city}
+                onChange={(event) =>
+                  setDraftProfile((current) => ({ ...current, city: event.target.value }))
+                }
+              />
             </div>
             <div className="space-y-2">
               <FieldLabel>Timezone</FieldLabel>
-              <TextInput value={timezone} onChange={(event) => setTimezone(event.target.value)} />
+              <TextInput
+                value={draftProfile.timezone ?? profile.timezone}
+                onChange={(event) =>
+                  setDraftProfile((current) => ({ ...current, timezone: event.target.value }))
+                }
+              />
             </div>
             <div className="space-y-2 md:col-span-2">
               <FieldLabel>Trading Focus</FieldLabel>
-              <TextArea rows={5} value={focus} onChange={(event) => setFocus(event.target.value)} />
+              <TextArea
+                rows={5}
+                value={draftProfile.focus ?? profile.focus}
+                onChange={(event) =>
+                  setDraftProfile((current) => ({ ...current, focus: event.target.value }))
+                }
+              />
             </div>
           </div>
         </Card>
@@ -137,7 +169,7 @@ export function SettingsView() {
                     <Badge tone="accent">Manual Sync</Badge>
                     <button
                       type="button"
-                      onClick={() => removeAccount(account.id)}
+                      onClick={() => void removeAccount(account.id)}
                       className="inline-flex items-center justify-center rounded-full border border-danger/20 bg-danger-soft p-2 text-danger transition hover:border-danger/35"
                       aria-label={`Delete ${account.name}`}
                     >

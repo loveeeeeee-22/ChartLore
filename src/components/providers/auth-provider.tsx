@@ -15,6 +15,11 @@ interface AuthContextValue {
   session: UserSession | null;
   loading: boolean;
   signIn: (email: string, password: string) => Promise<{ error?: string }>;
+  signUp: (
+    email: string,
+    password: string,
+    fullName: string,
+  ) => Promise<{ error?: string; requiresConfirmation?: boolean }>;
   signOut: () => Promise<void>;
 }
 
@@ -95,6 +100,47 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           id: "demo-user",
           email,
           fullName: email.split("@")[0]?.replace(/\./g, " ") || "ChartLore Trader",
+        };
+        window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(fallbackSession));
+        notifyStorageChange(STORAGE_KEYS.user);
+        return {};
+      },
+      async signUp(email, password, fullName) {
+        const supabase = getSupabaseBrowserClient();
+
+        if (supabase) {
+          const { data, error } = await supabase.auth.signUp({
+            email,
+            password,
+            options: {
+              data: {
+                full_name: fullName,
+              },
+            },
+          });
+
+          if (error) {
+            return { error: error.message };
+          }
+
+          if (!data.session || !data.user) {
+            return { requiresConfirmation: true };
+          }
+
+          const nextSession = {
+            id: data.user.id,
+            email: data.user.email ?? email,
+            fullName: data.user.user_metadata.full_name ?? fullName,
+          };
+          window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(nextSession));
+          notifyStorageChange(STORAGE_KEYS.user);
+          return {};
+        }
+
+        const fallbackSession = {
+          id: "demo-user",
+          email,
+          fullName: fullName.trim() || email.split("@")[0]?.replace(/\./g, " ") || "ChartLore Trader",
         };
         window.localStorage.setItem(STORAGE_KEYS.user, JSON.stringify(fallbackSession));
         notifyStorageChange(STORAGE_KEYS.user);
